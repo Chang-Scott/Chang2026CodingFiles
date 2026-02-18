@@ -73,8 +73,8 @@ ionic_species_to_consider = [
     "Al+3", "Fe+2", "Fe+3"
 ]
 # Species to exclude that are not in supcrt16 (which we use to generate properties in PlanetProfile)
-aqueous_species_to_exclude = ['FeCO3', 'NaCO3-', 'NaHCO3', "Al+3", "O2", "CH3COOH", "C2H4", "CO2", "C2H6", "C3H6O2", "C3H8",
-    "C6H8O7", "CH2O", "CH3CH2OH", "CH3COCOOH", "CH3OH", "CH4", "CO",
+aqueous_species_to_exclude = ['FeCO3', 'NaCO3-', 'NaHCO3', "Al+3", "O2", "CH3COOH", "C2H6", "C3H6O2", "C3H8",
+    "C6H8O7", "CH2O", "CH3CH2OH", "CH3COCOOH", "CH3OH", "CO",
     "Ca(CH3COO)2", "CaCl2", "CaSO4", "Fe+2", "Fe(CH3COO)2", "Fe+3",
     "FeCl2", "H2S", "HAlO2", "HCOOH", "HCl", "HSO4-", "KCH3COO",
     "KCl", "KHSO4", "KSO4-", "Mg(CH3COO)2", "MgSO4", "NaCH3COO", "NaCl",

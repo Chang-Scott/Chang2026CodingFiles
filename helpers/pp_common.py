@@ -97,6 +97,7 @@ def loadUserSettings(configModule: str = ''):
         globalParams.CALC_OCEAN_PROPS = True
         globalParams.SKIP_GRAVITY = True
         globalParams.SKIP_INDUCTION = True
+        globalParams.SKIP_PLOTS = True
     # Set plotting settings
     FigLbl.axisLabelsExplore['oceanComp'] = r'Log $\text{H}_2$ Fugacity'
     FigLbl.oceanCompLabel = r'Log $\text{H}_2$ Fugacity'

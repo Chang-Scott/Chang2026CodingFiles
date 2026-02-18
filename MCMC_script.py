@@ -11,7 +11,7 @@ from PlanetProfile.Main import LoadPPfiles, PlanetProfile
 from PlanetProfile.Thermodynamics.OceanProps import LiquidOceanPropsCalcs
 from Replicate_Zolotov_2008_Elemental import Replicate_Zolotov_H2, SetSettings
 from helpers.pp_common import loadUserSettings, CopyCarefully
-from plotting.mcmc_plots import plot_mcmc_results, plot_blob_distributions, plot_2d_corner
+from plotting.mcmc_plots import plot_mcmc_results, plot_blob_distributions, plot_2d_corner, plot_custom_corner, plot_posterior_vs_prior
 import time
 import copy
 from scipy.interpolate import make_interp_spline
@@ -44,12 +44,10 @@ BLOB_LABELS = {
     'ice_thickness_km': 'Ice Shell Thickness (km)',
     'ocean_thickness_km': 'Ocean Thickness (km)',
     'core_radius_km': 'Core Radius (km)',
-    'ocean_mean_density_kgm3': 'Ocean Mean Density (kg/m^3)',
-    'mean_conductivity_Sm': 'Mean Conductivity (S/m)'
+    'ocean_mean_density_kgm3': 'Ocean Mean Density',
+    'mean_conductivity_Sm': 'Mean Conductivity'
 }
-# Methanogenesis parameters
-logfH2RedoxStateInterval = 0.5 # interval for logfH2RedoxState x axis steps for methanogenesis calculations
-CH4_CO2_mixing_ratios = [1e-8, 1e-4, 0.4, 1e4, 1e8]
+
 
 # Parameter bounds
 PARAM_KEYS = ['rho_core', 'rho_sil', 'log_fH2', 'Tb_K']
@@ -63,7 +61,7 @@ PARAM_BOUNDS = {
 # Blob bounds (expected physical ranges for plotting)
 BLOB_BOUNDS = {
     'ice_thickness_km': [0, 90],
-    'ocean_thickness_km': [50, 200],
+    'ocean_thickness_km': [0, 200],
     'core_radius_km': [200, 600],
     'ocean_mean_density_kgm3': [1000, 1300],
     'mean_conductivity_Sm': [0, 5]
@@ -74,7 +72,7 @@ BLOB_BOUNDS = {
 # ============================================================================
 
 N_DIM = 4  # number of parameters [coreDensity, silicateDensity, logfH2, iceThickness]
-N_WALKERS = globalParams.maxCores * 2 # number of MCMC walkers (should be >= 2*N_DIM)
+N_WALKERS = globalParams.maxCores * 2 # number of MCMC walkers (Set to 2x number of CPU cores)
 BURN_IN = 1000 # number of burn-in steps
 N_STEPS = 10000 # number of production steps
 # Get parameter bounds as array for initialization
@@ -89,6 +87,7 @@ p0 = np.random.uniform(
 
 # Global variables for the worker processes
 loadUserSettings('Inversion')
+CopyCarefully(os.path.join('ModelFiles', baseModelFileName), os.path.join('Europa', baseModelFileName))
 globalParams, loadNames = LoadPPfiles(globalParams, fNames=[baseModelFileName], bodyname='Europa')
 Planet = importlib.import_module(loadNames[0]).Planet
 
@@ -174,26 +173,22 @@ def run_MCMC(yobs_param, planet_base, configParams):
     print(f"Burn-in steps: {nburn}")
     print(f"Production steps: {nsteps}")
     
-    # Separate scalar blobs and affinity arrays
-    print("Extracting scalar blobs and affinity data...")
+    print("Extracting scalar blobs...")
     scalar_blobs = np.zeros((total_steps, n_walkers_actual, len(BLOB_KEYS)))
-    affinity_data = np.zeros((total_steps, n_walkers_actual, len(H2_H2O_ratios)))
     
     for i in range(total_steps):
         for j in range(n_walkers_actual):
             scalar_blobs[i, j, :] = raw_blobs[i, j][0]
-            affinity_data[i, j, :] = raw_blobs[i, j][1]
     
     # Save all results (including burn-in)
     np.save('mcmc_chain.npy', full_chain)
     np.save('mcmc_log_prob.npy', full_log_prob)
     np.save('mcmc_acceptance_fraction.npy', sampler.acceptance_fraction)
     np.save('mcmc_blobs.npy', scalar_blobs)
-    np.save('mcmc_affinity_data.npy', affinity_data)
     np.save('mcmc_burn_in.npy', nburn)  # Save burn-in count for reference
     print("Saved: mcmc_chain.npy, mcmc_log_prob.npy, mcmc_acceptance_fraction.npy, mcmc_blobs.npy, mcmc_affinity_data.npy, mcmc_burn_in.npy")
     
-    return full_chain, full_log_prob, sampler.acceptance_fraction, scalar_blobs, affinity_data
+    return full_chain, full_log_prob, sampler.acceptance_fraction, scalar_blobs
 
 
 
@@ -229,10 +224,11 @@ def run_planetprofile(theta):
     time_start = time.time()
     planetRun, _ = PlanetProfile(planetRun, globalParams)
     time_end = time.time()
-    print(f"PlanetProfile time: {time_end - time_start:.2f} seconds")
-    
-    if time_end - time_start > 1:
-        print("HERE")
+    total_time = time_end - time_start
+
+    if total_time > 1.3:
+        print(f"HERE")
+       
     # Extract Love numbers from PlanetProfile results
     # These should be extracted from the Exploration or Planet object
     # Adjust based on actual PlanetProfile output structure
@@ -253,100 +249,15 @@ def run_planetprofile(theta):
         # These are NOT used in the likelihood but are saved for analysis
         # Store as array in consistent order (see BLOB_KEYS global)
         scalar_blobs = np.array([
-            planetRun.zb_km if hasattr(planetRun, 'zb_km') else np.nan,
-            planetRun.D_km if hasattr(planetRun, 'D_km') else np.nan,
-            planetRun.Rcore_m / 1e3 if hasattr(planetRun, 'Rcore_m') else np.nan,
-            planetRun.Ocean.rhoMean_kgm3 if hasattr(planetRun.Ocean, 'rhoMean_kgm3') else np.nan,
-            planetRun.sigmaMean_Sm if hasattr(planetRun, 'sigmaMean_Sm') else np.nan
+            planetRun.zb_km,
+            planetRun.D_km,
+            planetRun.Core.Rmean_m / 1e3,
+            planetRun.Ocean.rhoMean_kgm3,
+            planetRun.Ocean.sigmaMean_Sm
         ])
     
     return ysim, scalar_blobs
 
-def calculate_methanogenesis_affinities(invertedlogfH2RedoxStateRanges):
-    loadUserSettings('AffinityCalculations')
-    # Go through each redox state and calculate the affinities
-    logfH2RedoxStateRanges = np.arange(PARAM_BOUNDS['log_fH2'][0], PARAM_BOUNDS['log_fH2'][1] + logfH2RedoxStateInterval, logfH2RedoxStateInterval)
-    # Create array to hold affinities
-    methanogenesis_affinities_seafloor = np.full((len(logfH2RedoxStateRanges), len(CH4_CO2_mixing_ratios)), np.nan)
-    methanogenesis_affinities_seatop = np.full((len(logfH2RedoxStateRanges), len(CH4_CO2_mixing_ratios)), np.nan)
-    for i, logfH2RedoxState in enumerate(logfH2RedoxStateRanges):
-        oceanComp = Replicate_Zolotov_H2([logfH2RedoxState])[0]
-        # Go through each CO2_CH4_mixing_ratio and calculate the affinities
-        for j, CH4_CO2_mixing_ratio in enumerate(CH4_CO2_mixing_ratios):
-            # CO2 relative amount to add
-            CO2_H2_relative_ratio = 1
-            CH4_H2_relative_ratio = CH4_CO2_mixing_ratio * CO2_H2_relative_ratio
-            # Create Planet Object
-            planetRun = copy.deepcopy(Planet)
-            planetRun.Ocean.comp = oceanComp
-            planetRun.Do.ICEIh_THICKNESS = True
-            planetRun.Bulk.zb_approximate_km = 30
-            # Setup reaction parameters
-            planetRun.Ocean.Reaction.useReferenceSpecies = True
-            planetRun.Ocean.Reaction.referenceSpecies = 'H2(aq)'
-            planetRun.Ocean.Reaction.relativeRatioToReferenceSpecies['CO2(aq)'] = CO2_H2_relative_ratio
-            planetRun.Ocean.Reaction.relativeRatioToReferenceSpecies['Methane(aq)'] = CH4_H2_relative_ratio
-            planetRun.Ocean.Reaction.useH2ORatio = False
-            planetRun.Ocean.Reaction.reaction = "CO2(aq) + 4 H2(aq) -> Methane(aq) + 2 H2O(aq)"
-            
-            planetRun, _ = PlanetProfile(planetRun, globalParams)
-            methanogenesis_affinities_seafloor[i, j] = planetRun.Ocean.affinitySeafloor_kJ
-            methanogenesis_affinities_seatop[i, j] = planetRun.Ocean.affinityTop_kJ
-    
-    # Create scatter line plot of methanogenesis affinities
-    fig, ax = plt.subplots(figsize=(10, 8))
-    
-    # Define a colormap for different CH4_CO2 mixing ratios
-    colors = plt.cm.viridis(np.linspace(0, 1, len(CH4_CO2_mixing_ratios)))
-    
-    # Plot lines for each CH4_CO2 mixing ratio, with seafloor and seatop connected
-    for j, CH4_CO2_ratio in enumerate(CH4_CO2_mixing_ratios):
-        color = colors[j]
-        # Create label with special note for Enceladus ratio
-        if CH4_CO2_ratio == 0.4:
-            label = f'CH$_4$/CO$_2$ = 0.4 (ratio inferred at Enceladus)'
-        else:
-            exponent = int(np.log10(CH4_CO2_ratio))
-            label = f'CH$_4$/CO$_2$ = $10^{{{exponent}}}$'
-        # Create smooth interpolation
-        logfH2_smooth = np.linspace(logfH2RedoxStateRanges[0], logfH2RedoxStateRanges[-1], 300)
-        spl = make_interp_spline(logfH2RedoxStateRanges, methanogenesis_affinities_seafloor[:, j], k=3)
-        affinity_smooth = spl(logfH2_smooth)
-        line = ax.plot(logfH2_smooth, affinity_smooth, 
-                linestyle='-', linewidth=2,
-                color=color, label=label)[0]
-    # Add horizontal line at y=0 to indicate equilibrium
-    ax.axhline(y=0, color='red', linestyle='--', linewidth=2, label='Equilibrium')
-    # Add vertical lines for inverted logfH2 redox state ranges
-    ax.axvline(x=invertedlogfH2RedoxStateRanges[0], color='blue', linestyle=':', linewidth=2, 
-                label=f'Inverted log fH2 range')
-    ax.axvline(x=invertedlogfH2RedoxStateRanges[1], color='blue', linestyle=':', linewidth=2)
-    # Optionally add a shaded region between the bounds
-    ax.axvspan(invertedlogfH2RedoxStateRanges[0], invertedlogfH2RedoxStateRanges[1], 
-                alpha=0.2, color='blue')
-    # Set axis limits
-    ax.set_xlim(PARAM_BOUNDS['log_fH2'])
-    ax.set_ylim([-120, 80])
-    ax.set_xticks(np.arange(PARAM_BOUNDS['log_fH2'][0], PARAM_BOUNDS['log_fH2'][1] + 1, 1))
-    ax.set_yticks(np.arange(-120, 61, 20))
-    ax.set_xlabel(FigLbl.axisLabelsExplore['oceanComp'], fontsize=12)
-    ax.set_ylabel(FigLbl.axisLabelsExplore['affinitySeafloor_kJ'], fontsize=12)
-    ax.set_title('Affinity for Methanogesis at the Seafloor vs. Europa\'s Redox State', fontsize=14)
-    
-    # Add legend
-    ax.legend(loc='best', fontsize=10)
-    
-    # Add grid
-    ax.grid(True, alpha=0.3, linestyle='--')
-    
-    plt.tight_layout()
-    
-    # Save figure
-    output_dir = globalParams.FigureFiles.figPath if hasattr(globalParams.FigureFiles, 'figPath') else '.'
-    fig_path = os.path.join(output_dir, 'methanogenesis_affinity_line.png')
-    plt.savefig(fig_path, dpi=300, bbox_inches='tight')
-    plt.close()
-    return methanogenesis_affinities_seafloor
 
 def log_likelihood(ysim, yobs, cov):
     """Compute log likelihood for Gaussian errors."""
@@ -397,8 +308,6 @@ def log_probability(theta, yobs, cov):
 
 if __name__ == "__main__":
     CopyCarefully(os.path.join('ModelFiles', baseModelFileName), os.path.join('Europa', baseModelFileName))
-    """logfH2RedoxStateRanges = [-4, -3]
-    methanogenesis_affinities = calculate_methanogenesis_affinities(logfH2RedoxStateRanges)"""
     # Calculate true observations ONLY in main process
     print("Calculating true observations...")
     rhoSil_true = 3500.0
@@ -412,8 +321,10 @@ if __name__ == "__main__":
     TruePlanet.Sil.rhoSilWithCore_kgm3 = rhoSil_true
     TruePlanet.Ocean.comp = Replicate_Zolotov_H2([logfH2_true])[0]
     TruePlanet.Bulk.Tb_K = Tb_true
+    time_start = time.time()
     TruePlanet, _ = PlanetProfile(TruePlanet, globalParams)
-    
+    time_end = time.time()
+    print(f"PlanetProfile run time: {time_end - time_start:.2f} seconds")
     k2_true = TruePlanet.Gravity.kAmp
     h2_true = TruePlanet.Gravity.hAmp
     rOrbital = np.real(TruePlanet.Magnetic.Bi1Tot_nT[0])
@@ -457,11 +368,11 @@ if __name__ == "__main__":
         'rho_sil': rhoSil_true,
         'log_fH2': logfH2_true,
         'Tb_K': Tb_true,
-        'ice_thickness_km': TruePlanet.zb_km if hasattr(TruePlanet, 'zb_km') else np.nan,
-        'ocean_thickness_km': TruePlanet.D_km if hasattr(TruePlanet, 'D_km') else np.nan,
-        'core_radius_km': TruePlanet.Rcore_m / 1e3 if hasattr(TruePlanet, 'Rcore_m') else np.nan,
-        'ocean_mean_density_kgm3': TruePlanet.Ocean.rhoMean_kgm3 if hasattr(TruePlanet.Ocean, 'rhoMean_kgm3') else np.nan,
-        'mean_conductivity_Sm': TruePlanet.sigmaMean_Sm if hasattr(TruePlanet, 'sigmaMean_Sm') else np.nan,
+        'ice_thickness_km': TruePlanet.zb_km,
+        'ocean_thickness_km': TruePlanet.D_km,
+        'core_radius_km': TruePlanet.Core.Rmean_m / 1e3,
+        'ocean_mean_density_kgm3': TruePlanet.Ocean.rhoMean_kgm3,
+        'mean_conductivity_Sm': TruePlanet.Ocean.sigmaMean_Sm
     }
     
     # Generate plots
@@ -471,7 +382,7 @@ if __name__ == "__main__":
         log_prob,
         param_names,
         yobs_main,
-        burn_in=burn_in,
+        burn_in=BURN_IN,
         param_keys=PARAM_KEYS,
         param_bounds=PARAM_BOUNDS,
     )
@@ -480,7 +391,7 @@ if __name__ == "__main__":
     plot_blob_distributions(
         samples,
         scalar_blobs,
-        burn_in=burn_in,
+        burn_in=BURN_IN,
         blob_keys=BLOB_KEYS,
         blob_labels=BLOB_LABELS,
         blob_bounds=BLOB_BOUNDS,
@@ -499,16 +410,32 @@ if __name__ == "__main__":
         'Tb_K': r'$T_b$ (K)',
         **BLOB_LABELS,
     }
-    plot_2d_corner(
+    
+    # Example: Custom corner plot with selected variables
+    print("\nGenerating custom corner plot...")
+    plot_custom_corner(
         samples,
         scalar_blobs,
-        'log_fH2',
-        'ice_thickness_km',
-        true_values=true_vals,
-        burn_in=burn_in,
+        var_names=['log_fH2', 'ice_thickness_km', 'ocean_thickness_km'],
+        burn_in=BURN_IN,
         param_keys=PARAM_KEYS,
         blob_keys=BLOB_KEYS,
         label_map=label_map,
+        true_values=true_vals,
+        param_bounds=PARAM_BOUNDS,
+        blob_bounds=BLOB_BOUNDS,
+    )
+    
+    # Example: Posterior vs Prior plots for key parameters
+    plot_posterior_vs_prior(
+        samples,
+        scalar_blobs,
+        var_name='log_fH2',
+        burn_in=BURN_IN,
+        param_keys=PARAM_KEYS,
+        blob_keys=BLOB_KEYS,
+        label_map=label_map,
+        true_values=true_vals,
         param_bounds=PARAM_BOUNDS,
         blob_bounds=BLOB_BOUNDS,
     )
