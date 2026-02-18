@@ -1,5 +1,7 @@
+"""
+MCMC Plotting Functions
+"""
 import os
-
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
@@ -10,44 +12,50 @@ try:
 except Exception:
     corner = None
 
+# Import configuration
+from helpers.mcmc_functions import (
+    PARAM_KEYS, BLOB_KEYS, ALL_KEYS,
+    PARAM_BOUNDS, DERIVED_BOUNDS, OBSERVABLE_BOUNDS, ALL_BOUNDS,
+    PARAM_LABELS, DERIVED_LABELS, OBSERVABLE_LABELS, ALL_LABELS,
+    BURN_IN
+)
 
-def plot_2d_corner(
-    samples,
-    blobs,
-    var1_name,
-    var2_name,
-    true_values=None,
-    burn_in=0,
-    param_keys=None,
-    blob_keys=None,
-    label_map=None,
-    param_bounds=None,
-    blob_bounds=None,
-    use_bounds=True,
-):
+
+def plot_2d_corner(mcmc_data, var_names, var1_name, var2_name, burn_in=BURN_IN, 
+                   true_values=None, use_bounds=True, output_filename="mcmc_figures/2d_corner.png"):
     """
     Create a simple 2D corner plot between any two variables.
+    
+    Parameters
+    ----------
+    mcmc_data : ndarray
+        Combined MCMC data with shape (nsteps, nwalkers, nvars)
+    var_names : list
+        List of variable names corresponding to columns in mcmc_data
+    var1_name : str
+        First variable name
+    var2_name : str
+        Second variable name
+    burn_in : int
+        Number of burn-in steps to discard
+    true_values : dict, optional
+        True values for overlay
+    use_bounds : bool, optional
+        Whether to apply bounds to axes
+    output_filename : str
+        Output file path
     """
-    if param_keys is None or blob_keys is None or label_map is None:
-        raise ValueError("param_keys, blob_keys, and label_map are required")
-
-    param_map = {name: i for i, name in enumerate(param_keys)}
-    blob_map = {name: i for i, name in enumerate(blob_keys)}
-
-    if var1_name in param_map:
-        var1_data = samples[burn_in:, :, param_map[var1_name]].flatten()
-    elif var1_name in blob_map:
-        var1_data = blobs[burn_in:, :, blob_map[var1_name]].flatten()
-    else:
-        raise ValueError(f"Variable {var1_name} not found in parameters or blobs")
-
-    if var2_name in param_map:
-        var2_data = samples[burn_in:, :, param_map[var2_name]].flatten()
-    elif var2_name in blob_map:
-        var2_data = blobs[burn_in:, :, blob_map[var2_name]].flatten()
-    else:
-        raise ValueError(f"Variable {var2_name} not found in parameters or blobs")
-
+    # Flatten data after burn-in
+    flat_data = mcmc_data[burn_in:].reshape(-1, mcmc_data.shape[-1])
+    
+    # Get variable indices
+    idx1 = var_names.index(var1_name)
+    idx2 = var_names.index(var2_name)
+    
+    var1_data = flat_data[:, idx1]
+    var2_data = flat_data[:, idx2]
+    
+    # Remove NaNs
     valid_mask = ~(np.isnan(var1_data) | np.isnan(var2_data))
     var1_data = var1_data[valid_mask]
     var2_data = var2_data[valid_mask]
@@ -60,19 +68,16 @@ def plot_2d_corner(
     ax_top = fig.add_subplot(gs[0, :-1], sharex=ax_main)
     ax_right = fig.add_subplot(gs[1:, -1], sharey=ax_main)
 
-    
-    # Dark background like your figure
     ax_main.set_facecolor("black")
     fig.patch.set_facecolor("white")
 
-    # Hexbin with better brightness control
     hb = ax_main.hexbin(
         var1_data,
         var2_data,
         gridsize=200,
-        cmap="magma",          # brighter than Blues
+        cmap="magma",
         mincnt=1,
-        norm=LogNorm(),        # key for brightness
+        norm=LogNorm(),
     )
 
     if true_values and var1_name in true_values and var2_name in true_values:
@@ -85,32 +90,21 @@ def plot_2d_corner(
         ax_main.axhline(true_y, color='red', linestyle='--', alpha=0.5, linewidth=1)
         ax_main.legend(loc='best', fontsize=10)
 
-    ax_main.set_xlabel(label_map.get(var1_name, var1_name), fontsize=12)
-    ax_main.set_ylabel(label_map.get(var2_name, var2_name), fontsize=12)
+    ax_main.set_xlabel(ALL_LABELS.get(var1_name, var1_name), fontsize=12)
+    ax_main.set_ylabel(ALL_LABELS.get(var2_name, var2_name), fontsize=12)
     ax_main.grid(alpha=0.3)
 
     if use_bounds:
-        x_bounds = None
-        y_bounds = None
-        if param_bounds and var1_name in param_bounds:
-            x_bounds = param_bounds[var1_name]
-        elif blob_bounds and var1_name in blob_bounds:
-            x_bounds = blob_bounds[var1_name]
-
-        if param_bounds and var2_name in param_bounds:
-            y_bounds = param_bounds[var2_name]
-        elif blob_bounds and var2_name in blob_bounds:
-            y_bounds = blob_bounds[var2_name]
-
+        x_bounds = ALL_BOUNDS.get(var1_name)
+        y_bounds = ALL_BOUNDS.get(var2_name)
+        
         if x_bounds is not None:
             ax_main.set_xlim(x_bounds)
         if y_bounds is not None:
             ax_main.set_ylim(y_bounds)
 
-    if use_bounds and param_bounds and var1_name in param_bounds:
-        bins = np.linspace(param_bounds[var1_name][0], param_bounds[var1_name][1], 50)
-    elif use_bounds and blob_bounds and var1_name in blob_bounds:
-        bins = np.linspace(blob_bounds[var1_name][0], blob_bounds[var1_name][1], 50)
+    if use_bounds and var1_name in ALL_BOUNDS:
+        bins = np.linspace(ALL_BOUNDS[var1_name][0], ALL_BOUNDS[var1_name][1], 50)
     else:
         bins = 50
     ax_top.hist(var1_data, bins=bins, color='steelblue', alpha=0.7, edgecolor='black')
@@ -120,571 +114,386 @@ def plot_2d_corner(
     ax_top.tick_params(labelbottom=False)
     ax_top.grid(alpha=0.3)
 
-    if use_bounds and param_bounds and var2_name in param_bounds:
-        bins = np.linspace(param_bounds[var2_name][0], param_bounds[var2_name][1], 50)
-    elif use_bounds and blob_bounds and var2_name in blob_bounds:
-        bins = np.linspace(blob_bounds[var2_name][0], blob_bounds[var2_name][1], 50)
+    if use_bounds and var2_name in ALL_BOUNDS:
+        bins = np.linspace(ALL_BOUNDS[var2_name][0], ALL_BOUNDS[var2_name][1], 50)
     else:
         bins = 50
-    ax_right.hist(var2_data, bins=bins, color='steelblue', alpha=0.7,
-                  edgecolor='black', orientation='horizontal')
+    ax_right.hist(var2_data, bins=bins, orientation='horizontal',
+                  color='steelblue', alpha=0.7, edgecolor='black')
     if true_values and var2_name in true_values:
         ax_right.axhline(true_values[var2_name], color='red', linestyle='--', linewidth=2)
     ax_right.set_xlabel('Count', fontsize=10)
     ax_right.tick_params(labelleft=False)
     ax_right.grid(alpha=0.3)
 
-    os.makedirs('mcmc_figures', exist_ok=True)
-    filename = f'mcmc_figures/corner_{var1_name}_vs_{var2_name}.pdf'
-    plt.savefig(filename, dpi=300, bbox_inches='tight', transparent=True)
+    os.makedirs(os.path.dirname(output_filename), exist_ok=True)
+    plt.savefig(output_filename, dpi=300, bbox_inches='tight')
     plt.close()
-    print(f"Saved {filename}")
-
-    print(f"\n{label_map.get(var1_name, var1_name)}:")
-    print(f"  Median: {np.median(var1_data):.4f}")
-    print(f"  68% CI: [{np.percentile(var1_data, 16):.4f}, {np.percentile(var1_data, 84):.4f}]")
-    if true_values and var1_name in true_values:
-        print(f"  True: {true_values[var1_name]:.4f}")
-
-    print(f"\n{label_map.get(var2_name, var2_name)}:")
-    print(f"  Median: {np.median(var2_data):.4f}")
-    print(f"  68% CI: [{np.percentile(var2_data, 16):.4f}, {np.percentile(var2_data, 84):.4f}]")
-    if true_values and var2_name in true_values:
-        print(f"  True: {true_values[var2_name]:.4f}")
+    print(f"Saved {output_filename}")
 
 
-
-def plot_custom_corner(
-    samples,
-    blobs,
-    var_names,
-    burn_in=0,
-    param_keys=None,
-    blob_keys=None,
-    label_map=None,
-    true_values=None,
-    param_bounds=None,
-    blob_bounds=None,
-    use_bounds=True,
-    gridsize=200,
-    cmap="magma",
-    output_filename=None,
-):
+def plot_blob_distributions(mcmc_data, var_names, burn_in=BURN_IN, 
+                            output_filename="mcmc_figures/blob_distributions.png"):
     """
-    Create a custom corner plot with hexbin visualizations for all variable pairs.
-    No diagonal plots are shown, only off-diagonal hexbin plots.
+    Plot distributions of derived quantities (blobs).
     
     Parameters
     ----------
-    samples : ndarray
-        MCMC samples array with shape (nsteps, nwalkers, ndim)
-    blobs : ndarray
-        Blob data array with shape (nsteps, nwalkers, nblobs)
-    var_names : list of str
-        List of variable names to include in corner plot (can be parameters or blobs)
-    burn_in : int, optional
+    mcmc_data : ndarray
+        Combined MCMC data with shape (nsteps, nwalkers, nvars)
+    var_names : list
+        List of variable names corresponding to columns in mcmc_data
+    burn_in : int
         Number of burn-in steps to discard
-    param_keys : list of str, optional
-        List of parameter names corresponding to samples dimensions
-    blob_keys : list of str, optional
-        List of blob names corresponding to blobs dimensions
-    label_map : dict, optional
-        Mapping from variable names to display labels
-    true_values : dict, optional
-        Dictionary of true/reference values for each variable
-    param_bounds : dict, optional
-        Dictionary of bounds for parameters
-    blob_bounds : dict, optional
-        Dictionary of bounds for blobs
-    use_bounds : bool, optional
-        Whether to apply bounds to axes
-    gridsize : int, optional
-        Hexbin grid size (default: 200)
-    cmap : str, optional
-        Colormap for hexbin plots (default: "magma")
-    output_filename : str, optional
-        Custom output filename (default: auto-generated from var_names)
+    output_filename : str
+        Output file path
     """
-    if param_keys is None or blob_keys is None or label_map is None:
-        raise ValueError("param_keys, blob_keys, and label_map are required")
+    # Flatten data after burn-in
+    flat_data = mcmc_data[burn_in:].reshape(-1, mcmc_data.shape[-1])
     
-    # Create mappings for parameter and blob indices
-    param_map = {name: i for i, name in enumerate(param_keys)}
-    blob_map = {name: i for i, name in enumerate(blob_keys)}
+    # Plot derived quantities (first 5 blob keys)
+    derived_keys = BLOB_KEYS[:5]
     
-    # Extract data for all variables
-    var_data = {}
-    for var_name in var_names:
-        if var_name in param_map:
-            data = samples[burn_in:, :, param_map[var_name]].flatten()
-        elif var_name in blob_map:
-            data = blobs[burn_in:, :, blob_map[var_name]].flatten()
-        else:
-            raise ValueError(f"Variable {var_name} not found in parameters or blobs")
-        
-        # Remove NaNs
-        var_data[var_name] = data[~np.isnan(data)]
-    
-    n_vars = len(var_names)
-    
-    # Create figure with gridspec
-    fig_size = 3 * n_vars
-    fig = plt.figure(figsize=(fig_size, fig_size))
-    gs = fig.add_gridspec(n_vars, n_vars, hspace=0.05, wspace=0.05,
-                          left=0.1, right=0.92, bottom=0.1, top=0.95)
-    
-    # Create all subplots
-    axes = np.empty((n_vars, n_vars), dtype=object)
-    hexbin_plots = []
-    
-    for i in range(n_vars):
-        for j in range(n_vars):
-            if i > j:  # Lower triangular only
-                # Share axes appropriately
-                sharex = axes[n_vars-1, j] if i < n_vars-1 else None
-                sharey = axes[i, 0] if j > 0 else None
-                axes[i, j] = fig.add_subplot(gs[i, j], sharex=sharex, sharey=sharey)
-            else:
-                # Create subplot but will hide it
-                axes[i, j] = fig.add_subplot(gs[i, j])
-                axes[i, j].axis('off')
-    
-    # Plot hexbins for lower triangular
-    for i in range(n_vars):
-        for j in range(n_vars):
-            if i > j:  # Lower triangular only
-                ax = axes[i, j]
-                
-                # Get variable names for this subplot
-                x_var = var_names[j]
-                y_var = var_names[i]
-                
-                # Get data
-                x_data = var_data[x_var]
-                y_data = var_data[y_var]
-                
-                # Filter NaNs for this pair
-                valid_mask = ~(np.isnan(x_data) | np.isnan(y_data))
-                x_data_clean = x_data[valid_mask]
-                y_data_clean = y_data[valid_mask]
-                
-                # Set black background
-                ax.set_facecolor("black")
-                
-                # Create hexbin plot
-                hb = ax.hexbin(
-                    x_data_clean,
-                    y_data_clean,
-                    gridsize=gridsize,
-                    cmap=cmap,
-                    mincnt=1,
-                    norm=LogNorm(),
-                )
-                hexbin_plots.append(hb)
-                
-                # Add true values if available
-                if true_values and x_var in true_values and y_var in true_values:
-                    true_x = true_values[x_var]
-                    true_y = true_values[y_var]
-                    ax.scatter(true_x, true_y, marker='*', s=400, c='red',
-                              edgecolors='black', linewidths=1.5, zorder=10)
-                    ax.axvline(true_x, color='red', linestyle='--', alpha=0.5, linewidth=1)
-                    ax.axhline(true_y, color='red', linestyle='--', alpha=0.5, linewidth=1)
-                
-                # Apply bounds if requested
-                if use_bounds:
-                    x_bounds = None
-                    y_bounds = None
-                    
-                    if param_bounds and x_var in param_bounds:
-                        x_bounds = param_bounds[x_var]
-                    elif blob_bounds and x_var in blob_bounds:
-                        x_bounds = blob_bounds[x_var]
-                    
-                    if param_bounds and y_var in param_bounds:
-                        y_bounds = param_bounds[y_var]
-                    elif blob_bounds and y_var in blob_bounds:
-                        y_bounds = blob_bounds[y_var]
-                    
-                    if x_bounds is not None:
-                        ax.set_xlim(x_bounds)
-                    if y_bounds is not None:
-                        ax.set_ylim(y_bounds)
-                
-                # Set labels only on edges
-                if i == n_vars - 1:  # Bottom row
-                    ax.set_xlabel(label_map.get(x_var, x_var), fontsize=11)
-                else:
-                    ax.tick_params(labelbottom=False)
-                
-                if j == 0:  # Leftmost column
-                    ax.set_ylabel(label_map.get(y_var, y_var), fontsize=11)
-                else:
-                    ax.tick_params(labelleft=False)
-                
-                ax.grid(alpha=0.3)
-    
-    # Add shared colorbar on the right
-    if hexbin_plots:
-        cbar_ax = fig.add_axes([0.93, 0.1, 0.02, 0.85])
-        fig.colorbar(hexbin_plots[-1], cax=cbar_ax, label='Count')
-    
-    # Save figure
-    os.makedirs('mcmc_figures', exist_ok=True)
-    if output_filename is None:
-        var_str = '_'.join(var_names[:3])  # Use first 3 vars to avoid too long filename
-        if len(var_names) > 3:
-            var_str += f'_plus{len(var_names)-3}more'
-        filename = f'mcmc_figures/custom_corner_{var_str}.pdf'
-    else:
-        filename = output_filename
-    
-    plt.savefig(filename, dpi=300, bbox_inches='tight', transparent=True)
-    plt.close()
-    print(f"Saved {filename}")
-    
-    # Print statistics for each variable
-    print("\n" + "=" * 60)
-    print("CORNER PLOT VARIABLE STATISTICS")
-    print("=" * 60)
-    for var_name in var_names:
-        data = var_data[var_name]
-        median = np.median(data)
-        q16, q84 = np.percentile(data, [16, 84])
-        
-        print(f"\n{label_map.get(var_name, var_name)}:")
-        print(f"  Median: {median:.4f}")
-        print(f"  68% CI: [{q16:.4f}, {q84:.4f}]")
-        if true_values and var_name in true_values:
-            print(f"  True: {true_values[var_name]:.4f}")
-    print("=" * 60)
-
-
-def plot_posterior_vs_prior(
-    samples,
-    blobs,
-    var_name,
-    burn_in=0,
-    param_keys=None,
-    blob_keys=None,
-    label_map=None,
-    true_values=None,
-    param_bounds=None,
-    blob_bounds=None,
-    output_filename=None,
-    figsize=(10, 6),
-):
-    """
-    Create a publication-quality plot showing the evolution from prior to posterior
-    distribution for a single variable, with optional true value overlay.
-    
-    Parameters
-    ----------
-    samples : ndarray
-        MCMC samples array with shape (nsteps, nwalkers, ndim)
-    blobs : ndarray
-        Blob data array with shape (nsteps, nwalkers, nblobs)
-    var_name : str
-        Name of variable to plot (can be parameter or blob)
-    burn_in : int, optional
-        Number of burn-in steps to discard
-    param_keys : list of str, optional
-        List of parameter names corresponding to samples dimensions
-    blob_keys : list of str, optional
-        List of blob names corresponding to blobs dimensions
-    label_map : dict, optional
-        Mapping from variable names to display labels
-    true_values : dict, optional
-        Dictionary of true/reference values for each variable
-    param_bounds : dict, optional
-        Dictionary of bounds for parameters (used as prior bounds)
-    blob_bounds : dict, optional
-        Dictionary of bounds for blobs (used as prior bounds)
-    output_filename : str, optional
-        Custom output filename (default: auto-generated from var_name)
-    figsize : tuple, optional
-        Figure size (default: (10, 6))
-    """
-    if param_keys is None or blob_keys is None or label_map is None:
-        raise ValueError("param_keys, blob_keys, and label_map are required")
-    
-    # Create mappings for parameter and blob indices
-    param_map = {name: i for i, name in enumerate(param_keys)}
-    blob_map = {name: i for i, name in enumerate(blob_keys)}
-    
-    # Extract data for the variable
-    bounds = None
-    if var_name in param_map:
-        var_data = samples[burn_in:, :, param_map[var_name]].flatten()
-        bounds = param_bounds.get(var_name) if param_bounds else None
-    elif var_name in blob_map:
-        var_data = blobs[burn_in:, :, blob_map[var_name]].flatten()
-        bounds = blob_bounds.get(var_name) if blob_bounds else None
-    else:
-        raise ValueError(f"Variable {var_name} not found in parameters or blobs")
-    
-    if bounds is None:
-        raise ValueError(f"Bounds not found for variable {var_name}")
-    
-    # Clean data
-    var_data_clean = var_data[~np.isnan(var_data)]
-    
-    # Calculate statistics
-    posterior_median = np.median(var_data_clean)
-    posterior_std = np.std(var_data_clean)
-    q16, q84 = np.percentile(var_data_clean, [16, 84])
-    q10, q90 = np.percentile(var_data_clean, [10, 90])  # 80% credible interval
-    
-    # Create x range for plotting
-    prior_low, prior_high = bounds
-    prior_center = (prior_low + prior_high) / 2
-    x_range = np.linspace(prior_low - 0.15*(prior_high-prior_low), 
-                          prior_high + 0.15*(prior_high-prior_low), 1000)
-    
-    # Prior distribution (uniform)
-    prior_pdf = uniform.pdf(x_range, loc=prior_low, scale=prior_high-prior_low)
-    # Normalize for better visual comparison
-    prior_pdf = prior_pdf / prior_pdf.max() * 0.8
-    
-    # Posterior distribution (KDE)
-    kde = gaussian_kde(var_data_clean, bw_method='scott')
-    posterior_pdf = kde(x_range)
-    # Normalize
-    posterior_pdf = posterior_pdf / posterior_pdf.max()
-    
-    # Create figure
-    fig, ax = plt.subplots(figsize=figsize)
-    ax.set_facecolor('white')
-    fig.patch.set_facecolor('white')
-    
-    # Plot prior (orange)
-    ax.fill_between(x_range, prior_pdf, alpha=0.5, color='#E67E22', 
-                    label='Prior', zorder=1)
-    ax.plot(x_range, prior_pdf, color='#E67E22', linewidth=2.5, zorder=1)
-    
-    # Plot posterior (green)
-    ax.fill_between(x_range, posterior_pdf, alpha=0.5, color='#2ECC71',
-                    label='Posterior', zorder=2)
-    ax.plot(x_range, posterior_pdf, color='#2ECC71', linewidth=2.5, zorder=2)
-    
-    # Get max height for annotations
-    max_height = max(posterior_pdf.max(), prior_pdf.max())
-    
-    # Plot true value if available (blue dashed line)
-    true_val = None
-    if true_values and var_name in true_values:
-        true_val = true_values[var_name]
-    
-    # Add vertical dashed lines at key positions
-    ax.axvline(prior_center, color='#E67E22', linestyle='--', 
-               linewidth=1.5, alpha=0.5, zorder=0)
-    ax.axvline(posterior_median, color='#2ECC71', linestyle='--',
-               linewidth=1.5, alpha=0.5, zorder=0)
-    if true_val is not None:
-        ax.axvline(true_val, color='#3498DB', linestyle='--',
-                   linewidth=1.5, alpha=0.5, zorder=0)
-    
-    # Add text annotations below x-axis
-    y_text = -0.08 * max_height
-    ax.text(prior_center, y_text, 'Expectation', ha='center', va='top',
-            fontsize=11, fontweight='normal')
-    ax.text(posterior_median, y_text, 'Estimate', ha='center', va='top',
-            fontsize=11, fontweight='normal')
-    if true_val is not None:
-        ax.text(true_val, y_text, 'Reality', ha='center', va='top',
-                fontsize=11, fontweight='normal')
-    
-    # Add arrow annotations
-    arrow_y = max_height * 1.08
-    
-    # 80% posterior distribution arrow (middle 80%)
-    ax.annotate('', xy=(q90, arrow_y * 0.85), 
-                xytext=(q10, arrow_y * 0.85),
-                arrowprops=dict(arrowstyle='<->', color='#2ECC71', lw=2))
-    ax.text((q10 + q90) / 2, arrow_y * 0.9,
-            '80% Posterior', ha='center', va='bottom', fontsize=10, color='#2ECC71')
-    
-    # Prediction error arrow (if true value available)
-    if true_val is not None:
-        ax.annotate('', xy=(true_val, arrow_y), 
-                    xytext=(posterior_median, arrow_y),
-                    arrowprops=dict(arrowstyle='<->', color='black', lw=2))
-        ax.text((posterior_median + true_val) / 2, arrow_y * 1.05,
-                'Prediction error', ha='center', va='bottom', fontsize=10)
-    
-    # Styling
-    ax.set_xlabel(label_map.get(var_name, var_name), fontsize=13, fontweight='bold')
-    ax.set_ylabel('Probability Density', fontsize=13, fontweight='bold')
-    ax.grid(alpha=0.2, linestyle='--', linewidth=0.5)
-    ax.legend(loc='upper left', fontsize=11, framealpha=0.95, edgecolor='gray')
-    ax.set_ylim(bottom=-0.12*max_height, top=max_height*1.15)
-    ax.set_xlim(x_range[0], x_range[-1])
-    
-    # Remove top and right spines
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-    ax.spines['left'].set_linewidth(1.5)
-    ax.spines['bottom'].set_linewidth(1.5)
-    
-    # Thicker tick marks
-    ax.tick_params(width=1.5, labelsize=11)
-    
-    # Save figure
-    os.makedirs('mcmc_figures', exist_ok=True)
-    if output_filename is None:
-        filename = f'mcmc_figures/posterior_vs_prior_{var_name}.pdf'
-    else:
-        filename = output_filename
-    
-    plt.savefig(filename, dpi=300, bbox_inches='tight', facecolor='white')
-    plt.close()
-    print(f"Saved {filename}")
-    
-    # Print statistics
-    print(f"\n{'='*60}")
-    print(f"POSTERIOR VS PRIOR: {label_map.get(var_name, var_name)}")
-    print(f"{'='*60}")
-    print(f"Prior bounds: [{prior_low:.4f}, {prior_high:.4f}]")
-    print(f"Prior center: {prior_center:.4f}")
-    print(f"Posterior median: {posterior_median:.4f}")
-    print(f"Posterior std: {posterior_std:.4f}")
-    print(f"Posterior 68% CI: [{q16:.4f}, {q84:.4f}]")
-    print(f"Posterior 80% CI: [{q10:.4f}, {q90:.4f}]")
-    if true_val is not None:
-        print(f"True value: {true_val:.4f}")
-        print(f"Prediction error: {abs(posterior_median - true_val):.4f}")
-        print(f"Error as % of prior range: {100 * abs(posterior_median - true_val) / (prior_high - prior_low):.2f}%")
-    print(f"{'='*60}\n")
-
-
-def plot_blob_distributions(samples, blobs, burn_in=0, blob_keys=None, blob_labels=None, blob_bounds=None, use_bounds=True):
-    """
-    Plot distributions of additional properties saved as blobs.
-    """
-    if blob_keys is None or blob_labels is None:
-        raise ValueError("blob_keys and blob_labels are required")
-
-    _, _, n_blobs = blobs.shape
-
-    flat_blobs = {}
-    for i, key in enumerate(blob_keys):
-        if i >= n_blobs:
-            break
-        flat_data = blobs[burn_in:, :, i].flatten()
-        flat_blobs[key] = flat_data[~np.isnan(flat_data)]
-
     fig, axes = plt.subplots(2, 3, figsize=(15, 10))
     axes = axes.flatten()
+    
+    for i, key in enumerate(derived_keys):
+        idx = var_names.index(key)
+        data = flat_data[:, idx]
+        valid_data = data[~np.isnan(data)]
+        
+        axes[i].hist(valid_data, bins=50, color='steelblue', alpha=0.7, edgecolor='black')
+        axes[i].set_xlabel(DERIVED_LABELS.get(key, key), fontsize=10)
+        axes[i].set_ylabel('Count', fontsize=10)
+        axes[i].grid(alpha=0.3)
+    
+    # Hide the last subplot (we only have 5 derived quantities)
+    axes[-1].axis('off')
+    
+    plt.tight_layout()
+    os.makedirs(os.path.dirname(output_filename), exist_ok=True)
+    plt.savefig(output_filename, dpi=300, bbox_inches='tight')
+    plt.close()
+    print(f"Saved {output_filename}")
 
-    for idx, key in enumerate(blob_keys):
-        ax = axes[idx]
-        data = flat_blobs.get(key, np.array([]))
 
-        if len(data) > 0:
-            if use_bounds and blob_bounds and key in blob_bounds:
-                bins = np.linspace(blob_bounds[key][0], blob_bounds[key][1], 30)
-            else:
-                bins = 30
-
-            ax.hist(data, bins=bins, alpha=0.7, color='steelblue', edgecolor='black')
-
-            median = np.median(data)
-            q16, q84 = np.percentile(data, [16, 84])
-            ax.axvline(median, color='red', linestyle='--', linewidth=2, label=f'Median: {median:.2f}')
-            ax.axvline(q16, color='orange', linestyle=':', linewidth=1.5, alpha=0.7)
-            ax.axvline(q84, color='orange', linestyle=':', linewidth=1.5, alpha=0.7)
-
-            ax.set_xlabel(blob_labels.get(key, key), fontsize=11)
-            ax.set_ylabel('Count', fontsize=11)
-            ax.set_title(
-                f'{blob_labels.get(key, key)}\n{median:.2f} +{q84 - median:.2f} -{median - q16:.2f}',
-                fontsize=10
+def plot_custom_corner(mcmc_data, var_names, plot_vars=None, burn_in=BURN_IN, true_values=None, 
+                       gridsize=200, cmap="magma", output_filename=None):
+    """
+    Plot custom corner plot with hexbin off-diagonal plots and no diagonal plots.
+    
+    Parameters
+    ----------
+    mcmc_data : ndarray
+        Combined MCMC data with shape (nsteps, nwalkers, nvars)
+    var_names : list
+        List of variable names corresponding to columns in mcmc_data
+    plot_vars : list of str, optional
+        List of variable names to plot. If None, plots all parameters.
+    burn_in : int
+        Number of burn-in steps to discard
+    true_values : dict, optional
+        Dictionary of true parameter values {var_name: value}
+    gridsize : int
+        Hexbin grid size
+    cmap : str
+        Colormap name
+    output_filename : str, optional
+        Output file path. If None, uses default naming.
+    """
+    # Flatten data after burn-in
+    flat_data = mcmc_data[burn_in:].reshape(-1, mcmc_data.shape[-1])
+    
+    # Default to all parameters if not specified
+    if plot_vars is None:
+        plot_vars = PARAM_KEYS
+    
+    # Build data array for selected variables
+    data_list = []
+    for var_name in plot_vars:
+        if var_name not in var_names:
+            raise ValueError(f"Variable '{var_name}' not found in var_names")
+        idx = var_names.index(var_name)
+        data_list.append(flat_data[:, idx])
+    
+    data = np.column_stack(data_list)
+    
+    # Remove rows with NaN
+    valid_mask = ~np.isnan(data).any(axis=1)
+    data = data[valid_mask]
+    
+    n_vars = len(plot_vars)
+    
+    # Create figure with white background
+    fig = plt.figure(figsize=(3 * n_vars, 3 * n_vars), facecolor='white')
+    
+    # Create grid of subplots (lower triangular, no diagonal)
+    # Grid is (n_vars-1) x (n_vars-1) since we skip diagonal
+    axes = []
+    for i in range(1, n_vars):  # Start from 1 to skip first row (diagonal)
+        row_axes = []
+        for j in range(i):  # Only create plots where j < i (lower triangular)
+            ax = plt.subplot(n_vars - 1, n_vars - 1, (i - 1) * (n_vars - 1) + j + 1)
+            ax.set_facecolor('black')
+            row_axes.append(ax)
+        axes.append(row_axes)
+    
+    # Plot hexbins
+    for i in range(1, n_vars):  # Start from 1 (skip first variable on y-axis)
+        for j in range(i):  # j < i (lower triangular)
+            ax = axes[i - 1][j]
+            
+            x_data = data[:, j]
+            y_data = data[:, i]
+            
+            # Create hexbin
+            hb = ax.hexbin(
+                x_data, y_data,
+                gridsize=gridsize,
+                cmap=cmap,
+                mincnt=1,
+                norm=LogNorm()
             )
-            ax.grid(alpha=0.3)
-            ax.legend(fontsize=9)
-
-            if use_bounds and blob_bounds and key in blob_bounds:
-                ax.set_xlim(blob_bounds[key])
-        else:
-            ax.text(0.5, 0.5, 'No valid data', ha='center', va='center', transform=ax.transAxes)
-            ax.set_xlabel(blob_labels.get(key, key), fontsize=11)
-
-    axes[5].axis('off')
-
-    plt.tight_layout()
-    plt.savefig('mcmc_figures/blob_distributions.pdf', dpi=300, bbox_inches='tight', transparent=True)
+            
+            # Overlay true values if provided
+            if true_values:
+                x_var = plot_vars[j]
+                y_var = plot_vars[i]
+                
+                if x_var in true_values and y_var in true_values:
+                    true_x = true_values[x_var]
+                    true_y = true_values[y_var]
+                    
+                    ax.scatter(true_x, true_y, marker='*', s=200, c='red',
+                              edgecolors='white', linewidths=1, zorder=10)
+                    ax.axvline(true_x, color='red', linestyle='--', alpha=0.5, linewidth=0.8)
+                    ax.axhline(true_y, color='red', linestyle='--', alpha=0.5, linewidth=0.8)
+            
+            # Set bounds if available
+            x_var = plot_vars[j]
+            y_var = plot_vars[i]
+            
+            if x_var in ALL_BOUNDS:
+                ax.set_xlim(ALL_BOUNDS[x_var])
+            if y_var in ALL_BOUNDS:
+                ax.set_ylim(ALL_BOUNDS[y_var])
+            
+            # Determine if this is bottom row or left column
+            is_bottom_row = (i == n_vars - 1)
+            is_left_column = (j == 0)
+            
+            # Labels and ticks
+            if is_bottom_row:
+                ax.set_xlabel(ALL_LABELS.get(plot_vars[j], plot_vars[j]), 
+                             fontsize=10, color='black')
+                ax.tick_params(axis='x', colors='black', labelsize=8, labelbottom=True)
+            else:
+                ax.tick_params(axis='x', colors='black', labelsize=8, labelbottom=False)
+            
+            if is_left_column:
+                ax.set_ylabel(ALL_LABELS.get(plot_vars[i], plot_vars[i]), 
+                             fontsize=10, color='black')
+                ax.tick_params(axis='y', colors='black', labelsize=8, labelleft=True)
+            else:
+                ax.tick_params(axis='y', colors='black', labelsize=8, labelleft=False)
+            
+            # Spine colors (keep white to contrast with black plot background)
+            for spine in ax.spines.values():
+                spine.set_edgecolor('white')
+                spine.set_linewidth(0.5)
+    
+    # Add a single shared colorbar
+    cbar_ax = fig.add_axes([0.92, 0.15, 0.02, 0.7])
+    
+    # Create a dummy mappable for the colorbar
+    from matplotlib.cm import ScalarMappable
+    sm = ScalarMappable(cmap=cmap, norm=LogNorm(vmin=1, vmax=data.shape[0]/100))
+    sm.set_array([])
+    
+    cbar = fig.colorbar(sm, cax=cbar_ax)
+    cbar.set_label('Counts', fontsize=12, color='black')
+    cbar.ax.tick_params(colors='black', labelsize=8)
+    cbar.outline.set_edgecolor('black')
+    
+    plt.subplots_adjust(left=0.08, right=0.90, bottom=0.08, top=0.98, 
+                       hspace=0.05, wspace=0.05)
+    
+    # Save
+    if output_filename is None:
+        var_str = "_".join(plot_vars)
+        output_filename = f"mcmc_figures/custom_corner_{var_str}.png"
+    
+    os.makedirs(os.path.dirname(output_filename), exist_ok=True)
+    plt.savefig(output_filename, dpi=300, bbox_inches='tight', facecolor='white')
     plt.close()
-    print("Saved blob_distributions.pdf")
-
-    print("\n" + "=" * 60)
-    print("DERIVED QUANTITIES (BLOBS) STATISTICS")
-    print("=" * 60)
-    for key in blob_keys:
-        data = flat_blobs.get(key, np.array([]))
-        if len(data) > 0:
-            q16, median, q84 = np.percentile(data, [16, 50, 84])
-            print(f"{blob_labels.get(key, key)}:")
-            print(f"  Median: {median:.4f}")
-            print(f"  68% CI: [{q16:.4f}, {q84:.4f}]")
-            print(f"  Range: [{np.min(data):.4f}, {np.max(data):.4f}]")
-        else:
-            print(f"{blob_labels.get(key, key)}: No valid data")
-    print("=" * 60)
+    print(f"Saved {output_filename}")
 
 
-def plot_mcmc_results(
-    samples,
-    log_prob,
-    param_labels,
-    yobs,
-    burn_in=0,
-    param_keys=None,
-    param_bounds=None,
-    use_bounds=True,
-):
+def plot_posterior_vs_prior(mcmc_data, var_names, var_name, burn_in=BURN_IN, true_values=None, 
+                            output_filename=None, figsize=(10, 6)):
     """
-    Create comprehensive plots of MCMC results.
+    Plot posterior distribution vs prior distribution for a single variable.
+    
+    Parameters
+    ----------
+    mcmc_data : ndarray
+        Combined MCMC data with shape (nsteps, nwalkers, nvars)
+    var_names : list
+        List of variable names corresponding to columns in mcmc_data
+    var_name : str
+        Name of the variable to plot
+    burn_in : int
+        Number of burn-in steps to discard
+    true_values : dict, optional
+        Dictionary of true parameter values {var_name: value}
+    output_filename : str, optional
+        Output file path. If None, uses default naming.
+    figsize : tuple
+        Figure size
     """
-    nsteps, _, n_dim = samples.shape
+    # Flatten data after burn-in
+    flat_data = mcmc_data[burn_in:].reshape(-1, mcmc_data.shape[-1])
+    
+    # Extract data for the variable
+    if var_name not in var_names:
+        raise ValueError(f"Variable '{var_name}' not found in var_names")
+    
+    idx = var_names.index(var_name)
+    data = flat_data[:, idx]
+    
+    # Remove NaNs
+    data = data[~np.isnan(data)]
+    
+    # Get bounds
+    bounds = ALL_BOUNDS.get(var_name)
+    if bounds is None:
+        bounds = [data.min(), data.max()]
+    
+    # Create figure with white background
+    fig, ax = plt.subplots(figsize=figsize, facecolor='white')
+    ax.set_facecolor('white')
+    
+    # Create x-axis for plotting
+    x = np.linspace(bounds[0], bounds[1], 1000)
+    
+    # Prior (uniform)
+    prior_height = 1.0 / (bounds[1] - bounds[0])
+    ax.fill_between(x, 0, prior_height, alpha=0.3, color='gray', label='Prior (Uniform)')
+    
+    # Posterior (KDE)
+    kde = gaussian_kde(data)
+    posterior = kde(x)
+    ax.plot(x, posterior, 'b-', linewidth=2, label='Posterior (KDE)')
+    ax.fill_between(x, 0, posterior, alpha=0.3, color='blue')
+    
+    # True value
+    if true_values and var_name in true_values:
+        true_val = true_values[var_name]
+        ax.axvline(true_val, color='red', linestyle='--', linewidth=2, label='True Value')
+    
+    # Compute statistics
+    mean_val = np.mean(data)
+    median_val = np.median(data)
+    p10 = np.percentile(data, 10)
+    p90 = np.percentile(data, 90)
+    
+    # Add vertical lines for statistics
+    ax.axvline(mean_val, color='darkblue', linestyle=':', linewidth=1.5, alpha=0.7)
+    ax.axvline(median_val, color='darkblue', linestyle='-', linewidth=1.5, alpha=0.7)
+    
+    # Add 80% posterior interval arrow
+    y_arrow = ax.get_ylim()[1] * 0.85
+    ax.annotate('', xy=(p90, y_arrow), xytext=(p10, y_arrow),
+                arrowprops=dict(arrowstyle='<->', color='darkblue', lw=2))
+    ax.text((p10 + p90) / 2, y_arrow * 1.05, '80% Posterior',
+            ha='center', va='bottom', fontsize=10, color='darkblue', weight='bold')
+    
+    # Annotations
+    y_pos = ax.get_ylim()[1]
+    ax.text(mean_val, y_pos * 0.95, f'Mean: {mean_val:.3f}',
+            ha='center', va='top', fontsize=9, color='darkblue',
+            bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+    
+    if true_values and var_name in true_values:
+        error = mean_val - true_val
+        ax.text(true_val, y_pos * 0.75, f'True: {true_val:.3f}\nError: {error:+.3f}',
+                ha='center', va='top', fontsize=9, color='red',
+                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+    
+    # Labels and styling
+    ax.set_xlabel(ALL_LABELS.get(var_name, var_name), fontsize=12, color='black')
+    ax.set_ylabel('Probability Density', fontsize=12, color='black')
+    ax.set_title(f'Posterior vs Prior: {ALL_LABELS.get(var_name, var_name)}', 
+                fontsize=14, color='black', weight='bold')
+    
+    ax.legend(loc='upper right', fontsize=10, framealpha=0.9)
+    ax.grid(alpha=0.3, color='gray')
+    ax.tick_params(colors='black')
+    
+    for spine in ax.spines.values():
+        spine.set_edgecolor('black')
+    
+    # Save
+    if output_filename is None:
+        output_filename = f"mcmc_figures/posterior_vs_prior_{var_name}.png"
+    
+    os.makedirs(os.path.dirname(output_filename), exist_ok=True)
+    plt.savefig(output_filename, dpi=300, bbox_inches='tight', facecolor='white')
+    plt.close()
+    print(f"Saved {output_filename}")
 
+
+def plot_mcmc_results(samples, log_prob, burn_in=BURN_IN):
+    """
+    Generate diagnostic plots for MCMC results.
+    
+    Parameters
+    ----------
+    samples : ndarray
+        MCMC samples with shape (nsteps, nwalkers, ndim)
+    log_prob : ndarray
+        Log probability values with shape (nsteps, nwalkers)
+    burn_in : int
+        Number of burn-in steps
+    """
+    nsteps, nwalkers, n_dim = samples.shape
+    
     os.makedirs('mcmc_figures', exist_ok=True)
-
+    
+    # Trace plots for parameters
     print("Creating trace plots...")
-    fig, axes = plt.subplots(n_dim + 1, 1, figsize=(10, 2.5 * (n_dim + 1)), sharex=True)
-
-    for i in range(n_dim):
-        ax = axes[i]
-        ax.plot(samples[:, :, i], alpha=0.3, color='k', linewidth=0.5)
-        ax.set_ylabel(param_labels[i])
-        if burn_in > 0:
-            ax.axvline(burn_in, color='r', linestyle='--', label='Burn-in')
-        ax.grid(alpha=0.3)
-
-        if use_bounds and param_keys and param_bounds and i < len(param_keys):
-            param_key = param_keys[i]
-            if param_key in param_bounds:
-                ax.set_ylim(param_bounds[param_key])
-
-    axes[n_dim].plot(log_prob, alpha=0.3, color='k', linewidth=0.5)
-    axes[n_dim].set_ylabel('Log Probability')
-    axes[n_dim].set_xlabel('Step')
-    if burn_in > 0:
-        axes[n_dim].axvline(burn_in, color='r', linestyle='--', label='Burn-in')
-    axes[n_dim].grid(alpha=0.3)
-
+    fig, axes = plt.subplots(n_dim + 1, 1, figsize=(12, 2 * (n_dim + 1)), sharex=True)
+    
+    for i, param_key in enumerate(PARAM_KEYS):
+        for walker in range(nwalkers):
+            axes[i].plot(samples[:, walker, i], alpha=0.3, linewidth=0.5)
+        axes[i].axvline(burn_in, color='red', linestyle='--', linewidth=2, label='Burn-in')
+        axes[i].set_ylabel(PARAM_LABELS.get(param_key, param_key), fontsize=10)
+        axes[i].grid(alpha=0.3)
+        if i == 0:
+            axes[i].legend(loc='upper right')
+    
+    # Log probability
+    for walker in range(nwalkers):
+        axes[-1].plot(log_prob[:, walker], alpha=0.3, linewidth=0.5)
+    axes[-1].axvline(burn_in, color='red', linestyle='--', linewidth=2)
+    axes[-1].set_ylabel('Log Probability', fontsize=10)
+    axes[-1].set_xlabel('Step', fontsize=12)
+    axes[-1].grid(alpha=0.3)
+    
     plt.tight_layout()
-    plt.savefig('mcmc_figures/trace_plots.pdf', dpi=300, bbox_inches='tight', transparent=True)
+    plt.savefig('mcmc_figures/trace_plots.png', dpi=300, bbox_inches='tight')
     plt.close()
-    print("Saved trace_plots.pdf")
-
-    flat_samples = samples[burn_in:, :, :].reshape(-1, n_dim)
-    print(f"Chain shape after burn-in: {flat_samples.shape}")
-
+    print("Saved trace_plots.png")
+    
+    # Corner plot (if corner package available)
     if corner is not None:
         print("Creating corner plot...")
+        flat_samples = samples[burn_in:].reshape(-1, n_dim)
+        
         fig = corner.corner(
             flat_samples,
-            labels=param_labels,
+            labels=[PARAM_LABELS.get(key, key) for key in PARAM_KEYS],
             quantiles=[0.16, 0.5, 0.84],
             show_titles=True,
             title_fmt='.3f',
@@ -693,88 +502,5 @@ def plot_mcmc_results(
         plt.savefig('mcmc_figures/corner_plot.pdf', dpi=300, bbox_inches='tight', transparent=True)
         plt.close()
         print("Saved corner_plot.pdf")
-
-    print("\n" + "=" * 60)
-    print("PARAMETER STATISTICS")
-    print("=" * 60)
-    for i, name in enumerate(param_labels):
-        mcmc_samples = flat_samples[:, i]
-        q = np.percentile(mcmc_samples, [16, 50, 84])
-        q_m, q_med, q_p = q
-        print(f"{name}:")
-        print(f"  Median: {q_med:.4f}")
-        print(f"  -1σ: {q_med - q_m:.4f}")
-        print(f"  +1σ: {q_p - q_med:.4f}")
-        print(f"  68% CI: [{q_m:.4f}, {q_p:.4f}]")
-    print("=" * 60)
-
-    print("\nCreating posterior predictive plot...")
-    # plot_posterior_predictive(flat_samples, yobs)
-
-
-def plot_posterior_predictive(samples, yobs, run_planetprofile, n_samples=100):
-    """
-    Plot posterior predictive distribution vs observations.
-    """
-    indices = np.random.randint(len(samples), size=n_samples)
-
-    k2_pred = []
-    h2_pred = []
-
-    print(f"Generating {n_samples} posterior predictions...")
-    for idx in indices:
-        theta = samples[idx]
-        try:
-            ysim, _ = run_planetprofile(theta)
-            if not np.isnan(ysim).any():
-                k2_pred.append(ysim[0])
-                h2_pred.append(ysim[1])
-        except Exception as e:
-            print(f"Skipping sample due to error: {e}")
-            continue
-
-    k2_pred = np.array(k2_pred)
-    h2_pred = np.array(h2_pred)
-
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-
-    axes[0].hist(k2_pred, bins=30, alpha=0.7, color='steelblue', edgecolor='black')
-    axes[0].axvline(yobs[0], color='red', linestyle='--', linewidth=2, label='Observed')
-    axes[0].axvline(np.median(k2_pred), color='green', linestyle='-', linewidth=2, label='Predicted median')
-    axes[0].set_xlabel('k2 (Love number)', fontsize=12)
-    axes[0].set_ylabel('Count', fontsize=12)
-    axes[0].set_title('Posterior Predictive: k2', fontsize=14)
-    axes[0].legend()
-    axes[0].grid(alpha=0.3)
-
-    axes[1].hist(h2_pred, bins=30, alpha=0.7, color='coral', edgecolor='black')
-    axes[1].axvline(yobs[1], color='red', linestyle='--', linewidth=2, label='Observed')
-    axes[1].axvline(np.median(h2_pred), color='green', linestyle='-', linewidth=2, label='Predicted median')
-    axes[1].set_xlabel('h2 (Love number)', fontsize=12)
-    axes[1].set_ylabel('Count', fontsize=12)
-    axes[1].set_title('Posterior Predictive: h2', fontsize=14)
-    axes[1].legend()
-    axes[1].grid(alpha=0.3)
-
-    plt.tight_layout()
-    plt.savefig('mcmc_figures/posterior_predictive.pdf', dpi=300, bbox_inches='tight', transparent=True)
-    plt.close()
-    print("Saved posterior_predictive.pdf")
-
-    print("\nPosterior Predictive Statistics:")
-    print(f"k2: observed={yobs[0]:.4f}, predicted median={np.median(k2_pred):.4f} ± {np.std(k2_pred):.4f}")
-    print(f"h2: observed={yobs[1]:.4f}, predicted median={np.median(h2_pred):.4f} ± {np.std(h2_pred):.4f}")
-
-def plot_methanogenesis_affinities(samples, blobs, true_affinity):
-    """
-    Plot methanogenesis affinities.
-    """
-    
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-    axes[0].hist(blobs[:, 0], bins=30, alpha=0.7, color='steelblue', edgecolor='black')
-    axes[0].axvline(true_affinity[0], color='red', linestyle='--', linewidth=2, label='True')
-    axes[0].set_xlabel('Methanogenesis Affinity', fontsize=12)
-    axes[0].set_ylabel('Count', fontsize=12)
-    axes[0].set_title('Methanogenesis Affinity', fontsize=14)
-    axes[0].legend()
-    axes[0].grid(alpha=0.3)
+    else:
+        print("Corner package not available, skipping corner plot")
