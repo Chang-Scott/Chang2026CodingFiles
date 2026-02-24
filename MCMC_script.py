@@ -202,7 +202,7 @@ if __name__ == "__main__":
     calc_new = True
     
     if calc_new:
-        N_WALKERS = 8
+        N_WALKERS = globalParams.maxCores * 2
         samples, blobs, log_prob = run_mcmc(yobs, N_WALKERS, N_STEPS, BURN_IN)
     else:
         print("\nLoading MCMC data...")

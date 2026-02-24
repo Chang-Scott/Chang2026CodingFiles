@@ -6,7 +6,7 @@ import numpy as np
 import copy
 from PlanetProfile.Main import PlanetProfile
 from Replicate_Zolotov_2008_Elemental import Replicate_Zolotov_H2
-
+import emcee
 
 # ============================================================================
 # CONFIGURATION - DATA STRUCTURE
@@ -101,6 +101,19 @@ MAG_ERR = 1.5
 # Covariance matrix (6x6 for all observables)
 COV = np.diag([K2_ERR**2, H2_ERR**2, MAG_ERR**2, MAG_ERR**2, MAG_ERR**2, MAG_ERR**2])
 
+sig = np.array([
+    300.0,   # rho_core
+    100.0,   # rho_sil
+    2.0,     # log_fH2  <-- key for valley crossing
+    4.0      # Tb_K
+])
+
+parameter_cov = np.diag(sig**2)
+
+MOVES = [
+    (emcee.moves.StretchMove(a=2.0), 0.8),
+    (emcee.moves.GaussianMove(parameter_cov), 0.2),
+]
 
 # ============================================================================
 # FORWARD MODEL
