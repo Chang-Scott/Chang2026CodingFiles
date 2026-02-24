@@ -74,13 +74,13 @@ def run_interior_densities(doPlots = True):
     
     ExplorationGrid = np.empty((len(all_core_densities), len(silicateDensities)), dtype=object)
     currentModelFile = 'PPEuropa_ExploreBaseModel_wFeCore_Fixed.py'
-    LogH2Fugacities = np.linspace(-12, -3, 2)
+    LogH2Fugacities = np.linspace(-12, -3, 30)
     
     SetSettings(save_to_txt_file=saveToTxtFile, output_figures=OUTPUTFIGURES, mat_output_dir=_MATOUTPUTDIR, txt_output_dir=_TXTOUTPUTDIR, figure_output_dir=_FIGUREOUTPUTDIR)
     CustomSolutionComps = Replicate_Zolotov_H2(LogH2Fugacities)
     globalParams.Explore.oceanCompRangeList = CustomSolutionComps
     
-    globalParams.Explore.ny = 2
+    globalParams.Explore.ny = 36
     globalParams.Explore.yRange = [10, 90]
     globalParams.Explore.xRange = [LogH2Fugacities[0], LogH2Fugacities[-1]]
 
@@ -461,8 +461,8 @@ if __name__ == "__main__":
     spotModelFileName = 'PPEuropa_SpotModel_wFeCore_3500rhokgm3_5150fekgm3.py'
     CopyCarefully(os.path.join('ModelFiles', spotModelFileName), os.path.join('Europa', spotModelFileName))
     #run_spot_models()
-    calculate_methanogenesis_affinities(modelType='plume')
-    #ExplorationGrid, noCoreExploration = run_interior_densities(doPlots=True)
+    #calculate_methanogenesis_affinities(modelType='plume')
+    ExplorationGrid, noCoreExploration = run_interior_densities(doPlots=True)
     #run_best_fit_model(ExplorationGrid, noCoreExploration)
 
 

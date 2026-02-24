@@ -101,18 +101,9 @@ MAG_ERR = 1.5
 # Covariance matrix (6x6 for all observables)
 COV = np.diag([K2_ERR**2, H2_ERR**2, MAG_ERR**2, MAG_ERR**2, MAG_ERR**2, MAG_ERR**2])
 
-sig = np.array([
-    300.0,   # rho_core
-    100.0,   # rho_sil
-    2.0,     # log_fH2  <-- key for valley crossing
-    4.0      # Tb_K
-])
-
-parameter_cov = np.diag(sig**2)
-
 MOVES = [
-    (emcee.moves.StretchMove(a=2.0), 0.8),
-    (emcee.moves.GaussianMove(parameter_cov), 0.2),
+    (emcee.moves.StretchMove(), 0.5),
+    (emcee.moves.DEMove(), 0.5)
 ]
 
 # ============================================================================
@@ -154,6 +145,9 @@ def run_planetprofile(theta, planet_template, global_params):
     planetRun.Do.ICEIh_THICKNESS = False
     planetRun.Sil.rhoSilWithCore_kgm3 = rho_sil
     planetRun.Bulk.Tb_K = Tb_K
+    
+    # Round redox state to nearest 0.05 to reduce computat
+    log_fH2 = round(log_fH2 / 0.05) * 0.05
     planetRun.Ocean.comp = Replicate_Zolotov_H2([log_fH2])[0]
     
     # Run forward model
@@ -279,24 +273,8 @@ def log_likelihood(observables, yobs, cov):
 _last_log_fH2 = {}  # Dictionary keyed by thread/process ID
 
 def log_probability(theta, yobs, cov, forward_model_fn):
-    import threading
-    import os
     
-    log_fH2 = theta[2]
-    thread_id = (os.getpid(), threading.get_ident())
-    
-    # Calculate step size from last proposal
-    if thread_id in _last_log_fH2:
-        delta_log_fH2 = abs(log_fH2 - _last_log_fH2[thread_id])
-        
-        # Track large jumps
-        if delta_log_fH2 > 2.0:  # Threshold you care about
-            print(f"LARGE JUMP: {_last_log_fH2[thread_id]:.4f} -> {log_fH2:.4f} (Δ={delta_log_fH2:.4f})")
-
-    _last_log_fH2[thread_id] = log_fH2
     lp = log_prior(theta)
-    if theta[2] > -8 and theta[2] < -5:
-        print(lp)
     if not np.isfinite(lp):
         # Return NaN blobs for rejected samples
         nan_blobs = np.full(len(BLOB_KEYS), np.nan)

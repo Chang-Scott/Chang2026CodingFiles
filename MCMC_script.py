@@ -199,7 +199,7 @@ if __name__ == "__main__":
     })
     
     # Run or load MCMC
-    calc_new = True
+    calc_new = False
     
     if calc_new:
         N_WALKERS = globalParams.maxCores * 2
@@ -257,7 +257,7 @@ if __name__ == "__main__":
     plot_custom_corner(
         mcmc_data,
         var_names=var_names,
-        plot_vars=['log_fH2', 'ice_thickness_km', 'ocean_thickness_km'],
+        plot_vars=['log_fH2', 'Tb_K'],
         true_values=true_params,
     )
     
