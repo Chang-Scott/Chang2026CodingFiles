@@ -6,12 +6,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 from scipy.stats import gaussian_kde, uniform
-
-try:
-    import corner
-except Exception:
-    corner = None
-
+import corner
 # Import configuration
 from helpers.mcmc_functions import (
     PARAM_KEYS, BLOB_KEYS, ALL_KEYS,
@@ -379,11 +374,11 @@ def plot_posterior_vs_prior(mcmc_data, var_names, var_name, burn_in=BURN_IN, tru
     # Prior (uniform)
     prior_height = 1.0 / (bounds[1] - bounds[0])
     ax.fill_between(x, 0, prior_height, alpha=0.3, color='gray', label='Prior (Uniform)')
-    
-    # Posterior (KDE)
+    ax.plot(x, np.full_like(x, prior_height), color='black', linewidth=1.5)
+    # Posterior
     kde = gaussian_kde(data)
     posterior = kde(x)
-    ax.plot(x, posterior, 'b-', linewidth=2, label='Posterior (KDE)')
+    ax.plot(x, posterior, 'b-', linewidth=2, label='Posterior')
     ax.fill_between(x, 0, posterior, alpha=0.3, color='blue')
     
     # True value
@@ -392,31 +387,19 @@ def plot_posterior_vs_prior(mcmc_data, var_names, var_name, burn_in=BURN_IN, tru
         ax.axvline(true_val, color='red', linestyle='--', linewidth=2, label='True Value')
     
     # Compute statistics
-    mean_val = np.mean(data)
     median_val = np.median(data)
-    p10 = np.percentile(data, 10)
-    p90 = np.percentile(data, 90)
     
-    # Add vertical lines for statistics
-    ax.axvline(mean_val, color='darkblue', linestyle=':', linewidth=1.5, alpha=0.7)
+
     ax.axvline(median_val, color='darkblue', linestyle='-', linewidth=1.5, alpha=0.7)
-    
-    # Add 80% posterior interval arrow
-    y_arrow = ax.get_ylim()[1] * 0.85
-    ax.annotate('', xy=(p90, y_arrow), xytext=(p10, y_arrow),
-                arrowprops=dict(arrowstyle='<->', color='darkblue', lw=2))
-    ax.text((p10 + p90) / 2, y_arrow * 1.05, '80% Posterior',
-            ha='center', va='bottom', fontsize=10, color='darkblue', weight='bold')
     
     # Annotations
     y_pos = ax.get_ylim()[1]
-    ax.text(mean_val, y_pos * 0.95, f'Mean: {mean_val:.3f}',
+    ax.text(median_val, y_pos * 0.95, f'Median: {median_val:.3f}',
             ha='center', va='top', fontsize=9, color='darkblue',
             bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
     
     if true_values and var_name in true_values:
-        error = mean_val - true_val
-        ax.text(true_val, y_pos * 0.75, f'True: {true_val:.3f}\nError: {error:+.3f}',
+        ax.text(true_val, y_pos * 0.75, f'True: {true_val:.3f}',
                 ha='center', va='top', fontsize=9, color='red',
                 bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
     
@@ -425,7 +408,7 @@ def plot_posterior_vs_prior(mcmc_data, var_names, var_name, burn_in=BURN_IN, tru
     ax.set_ylabel('Probability Density', fontsize=12, color='black')
     ax.set_title(f'Posterior vs Prior: {ALL_LABELS.get(var_name, var_name)}', 
                 fontsize=14, color='black', weight='bold')
-    
+    ax.set_xlim(bounds)
     ax.legend(loc='upper right', fontsize=10, framealpha=0.9)
     ax.grid(alpha=0.3, color='gray')
     ax.tick_params(colors='black')
@@ -486,21 +469,148 @@ def plot_mcmc_results(samples, log_prob, burn_in=BURN_IN):
     plt.close()
     print("Saved trace_plots.png")
     
-    # Corner plot (if corner package available)
-    if corner is not None:
-        print("Creating corner plot...")
-        flat_samples = samples[burn_in:].reshape(-1, n_dim)
-        
-        fig = corner.corner(
-            flat_samples,
-            labels=[PARAM_LABELS.get(key, key) for key in PARAM_KEYS],
-            quantiles=[0.16, 0.5, 0.84],
-            show_titles=True,
-            title_fmt='.3f',
-            title_kwargs={"fontsize": 12}
-        )
-        plt.savefig('mcmc_figures/corner_plot.pdf', dpi=300, bbox_inches='tight', transparent=True)
-        plt.close()
-        print("Saved corner_plot.pdf")
+    # Corner plot
+    print("Creating corner plot...")
+    flat_samples = samples[burn_in:].reshape(-1, n_dim)
+    
+    fig = corner.corner(
+        flat_samples,
+        labels=[PARAM_LABELS.get(key, key) for key in PARAM_KEYS],
+        quantiles=[0.16, 0.5, 0.84],
+        show_titles=True,
+        title_fmt='.3f',
+        title_kwargs={"fontsize": 12}
+    )
+    plt.savefig('mcmc_figures/corner_plot.pdf', dpi=300, bbox_inches='tight', transparent=True)
+    plt.close()
+    print("Saved corner_plot.pdf")
+
+
+def plot_variable_histograms(mcmc_data, var_names, plot_vars=None, burn_in=BURN_IN, 
+                             true_values=None, bins=50, output_filename="mcmc_figures/variable_histograms.png"):
+    """
+    Plot histograms of selected variables for diagnostic purposes.
+    
+    This function creates a grid of histograms showing the posterior distributions
+    of selected variables, optionally overlaying true values and prior bounds.
+    Useful for verifying that MCMC is exploring the parameter space as expected.
+    
+    Parameters
+    ----------
+    mcmc_data : ndarray
+        Combined MCMC data with shape (nsteps, nwalkers, nvars)
+    var_names : list
+        List of variable names corresponding to columns in mcmc_data
+    plot_vars : list of str, optional
+        List of variable names to plot. If None, plots all parameters.
+    burn_in : int
+        Number of burn-in steps to discard
+    true_values : dict, optional
+        Dictionary of true parameter values {var_name: value}
+    bins : int or str
+        Number of bins for histograms (or 'auto')
+    output_filename : str
+        Output file path
+    """
+    # Flatten data after burn-in
+    flat_data = mcmc_data[burn_in:].reshape(-1, mcmc_data.shape[-1])
+    
+    # Default to all parameters if not specified
+    if plot_vars is None:
+        plot_vars = PARAM_KEYS
+    
+    n_vars = len(plot_vars)
+    
+    # Determine grid layout
+    n_cols = min(3, n_vars)
+    n_rows = int(np.ceil(n_vars / n_cols))
+    
+    # Create figure
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(5 * n_cols, 4 * n_rows))
+    fig.patch.set_facecolor('white')
+    
+    # Flatten axes array for easy iteration
+    if n_vars == 1:
+        axes = [axes]
     else:
-        print("Corner package not available, skipping corner plot")
+        axes = axes.flatten() if n_vars > n_cols else axes
+    
+    for idx, var_name in enumerate(plot_vars):
+        ax = axes[idx]
+        
+        # Get variable data
+        if var_name not in var_names:
+            ax.text(0.5, 0.5, f"Variable '{var_name}'\nnot found", 
+                   ha='center', va='center', transform=ax.transAxes)
+            ax.set_xticks([])
+            ax.set_yticks([])
+            continue
+        
+        
+        var_idx = var_names.index(var_name)
+        data = flat_data[:, var_idx]
+        
+        # Remove NaNs
+        data = data[~np.isnan(data)]
+        
+        if len(data) == 0:
+            ax.text(0.5, 0.5, f"No valid data\nfor '{var_name}'", 
+                   ha='center', va='center', transform=ax.transAxes)
+            ax.set_xticks([])
+            ax.set_yticks([])
+            continue
+        
+        # Get bounds for this variable
+        bounds = ALL_BOUNDS.get(var_name)
+        
+        # Create histogram
+        if bounds is not None:
+            bin_edges = np.linspace(bounds[0], bounds[1], bins + 1)
+            counts, edges, patches = ax.hist(data, bins=bin_edges, color='steelblue', 
+                                            alpha=0.7, edgecolor='black', linewidth=0.5)
+        else:
+            counts, edges, patches = ax.hist(data, bins=bins, color='steelblue', 
+                                            alpha=0.7, edgecolor='black', linewidth=0.5)
+        
+        # Overlay true value if provided
+        if true_values and var_name in true_values:
+            true_val = true_values[var_name]
+            ax.axvline(true_val, color='red', linestyle='--', linewidth=2, 
+                      label='True Value', zorder=10)
+        
+        # Add vertical lines for statistics
+        mean_val = np.mean(data)
+        median_val = np.median(data)
+        
+        ax.axvline(mean_val, color='darkblue', linestyle=':', linewidth=1.5, 
+                  alpha=0.7, label='Mean')
+        ax.axvline(median_val, color='darkblue', linestyle='-', linewidth=1.5, 
+                  alpha=0.7, label='Median')
+        
+        # Set bounds if available
+        if bounds is not None:
+            ax.set_xlim(bounds)
+        else:
+            ax.set_xlim(data.min(), data.max())
+        # Labels and title
+        ax.set_xlabel(ALL_LABELS.get(var_name, var_name), fontsize=11, weight='bold')
+        ax.set_ylabel('Count', fontsize=10)
+    
+        
+        # Grid
+        ax.grid(alpha=0.3, linestyle='--', linewidth=0.5)
+        ax.set_axisbelow(True)
+        
+        # Legend (only for first plot to avoid clutter)
+        if idx == 0:
+            ax.legend(loc='upper left', fontsize=8, framealpha=0.9)
+    
+    # Hide unused subplots
+    for idx in range(n_vars, len(axes)):
+        axes[idx].axis('off')
+    
+    plt.tight_layout()
+    os.makedirs(os.path.dirname(output_filename), exist_ok=True)
+    plt.savefig(output_filename, dpi=300, bbox_inches='tight', facecolor='white')
+    plt.close()
+    print(f"Saved {output_filename}")

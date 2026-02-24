@@ -20,7 +20,8 @@ from helpers.mcmc_functions import *
 from Replicate_Zolotov_2008_Elemental import Replicate_Zolotov_H2, SetSettings
 from helpers.pp_common import loadUserSettings, CopyCarefully
 from plotting.mcmc_plots import (
-    plot_mcmc_results, plot_2d_corner, plot_custom_corner, plot_posterior_vs_prior
+    plot_mcmc_results, plot_2d_corner, plot_custom_corner, plot_posterior_vs_prior,
+    plot_variable_histograms
 )
 
 # Setup
@@ -105,9 +106,11 @@ def run_mcmc(yobs, n_walkers, n_steps, burn_in):
     
     # Initialize walkers
     p0 = initialize_walkers(n_walkers)
-    
+    p0[2:5, 2] = np.random.uniform(-3, -4, 3)   
+    p0[0:2, 2] = np.random.uniform(-12, -10, 2)
+    p0[5:n_walkers, 2] = np.random.uniform(-8, -6, n_walkers - 5)
     # Set number of parallel processes
-    n_processes = globalParams.maxCores
+    n_processes = globalParams.maxCores - 2
     print(f"\nUsing {n_processes} parallel processes")
     
     with Pool(processes=n_processes) as pool:
@@ -196,10 +199,10 @@ if __name__ == "__main__":
     })
     
     # Run or load MCMC
-    calc_new = False
+    calc_new = True
     
     if calc_new:
-        N_WALKERS = globalParams.maxCores * 2
+        N_WALKERS = 8
         samples, blobs, log_prob = run_mcmc(yobs, N_WALKERS, N_STEPS, BURN_IN)
     else:
         print("\nLoading MCMC data...")
@@ -221,6 +224,33 @@ if __name__ == "__main__":
     
     # Trace plots and corner plot
     plot_mcmc_results(samples, log_prob)
+    
+    # Histogram diagnostic plots
+    print("\nGenerating histogram diagnostic plots...")
+    
+    """# Filter data based on redox state (log_fH2) between -4 and -3
+    log_fH2_idx = var_names.index('log_fH2')
+    mask = (mcmc_data[BURN_IN:, :, log_fH2_idx] >= -4) & (mcmc_data[BURN_IN:, :, log_fH2_idx] <= -3)
+    
+    # Apply filter and reshape to maintain (steps, walkers, variables) format
+    filtered_data = mcmc_data[BURN_IN:][mask]
+    n_filtered = filtered_data.shape[0]
+    n_vars = mcmc_data.shape[-1]
+    mcmc_data = filtered_data.reshape(n_filtered, 1, n_vars)
+    # Print statistics for mag_i_syn
+    mag_i_syn_idx = var_names.index('mag_i_orb')
+    mag_i_syn_data = filtered_data[:, mag_i_syn_idx]
+    print(f"\nMag_i_orb statistics (filtered data):")
+    print(f"  Min: {np.min(mag_i_syn_data):.3f}")
+    print(f"  Max: {np.max(mag_i_syn_data):.3f}")
+    print(f"  Mean: {np.mean(mag_i_syn_data):.3f}")
+    print(f"  Std: {np.std(mag_i_syn_data):.3f}")"""
+    plot_variable_histograms(
+        mcmc_data,
+        var_names=var_names,
+        plot_vars=['k2', 'h2', 'mag_r_orb', 'mag_i_orb', 'mag_r_syn', 'mag_i_syn'],  # Plot all parameters
+        true_values=true_params,
+    )
     
     # Custom corner plot
     print("\nGenerating custom corner plot...")

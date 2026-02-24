@@ -43,12 +43,12 @@ DERIVED_BOUNDS = {
 }
 
 OBSERVABLE_BOUNDS = {
-    'k2': [0.0, 1.0],
-    'h2': [0.0, 2.0],
-    'mag_r_orb': [-100, 100],
-    'mag_i_orb': [-100, 100],
-    'mag_r_syn': [-100, 100],
-    'mag_i_syn': [-100, 100],
+    'k2': [0.25, 0.35],
+    'h2': [1.1, 1.3],
+    'mag_r_orb': [7.5, 12.5],
+    'mag_i_orb': [0, 5],
+    'mag_r_syn': [200, 215],
+    'mag_i_syn': [6.5, 19],
 }
 
 ALL_BOUNDS = {**PARAM_BOUNDS, **DERIVED_BOUNDS, **OBSERVABLE_BOUNDS}
@@ -90,8 +90,8 @@ ALL_LABELS = {**PARAM_LABELS, **DERIVED_LABELS, **OBSERVABLE_LABELS}
 # ============================================================================
 
 N_DIM = len(PARAM_KEYS)
-BURN_IN = 10
-N_STEPS = 10
+BURN_IN = 100
+N_STEPS = 5000
 
 # Observation uncertainties
 K2_ERR = 0.018
@@ -145,7 +145,8 @@ def run_planetprofile(theta, planet_template, global_params):
     
     # Run forward model
     planetRun, _ = PlanetProfile(planetRun, global_params)
-    
+    if log_fH2 < -8 and log_fH2 > -5:
+        print(planetRun.Do.VALID)
     if not planetRun.Do.VALID:
         # Return NaN arrays
         observables = np.full(6, np.nan)
@@ -261,31 +262,28 @@ def log_likelihood(observables, yobs, cov):
     
     residual = observables - yobs
     return -0.5 * residual.T @ np.linalg.inv(cov) @ residual
-
+# Add at module level in mcmc_functions.py
+_last_log_fH2 = {}  # Dictionary keyed by thread/process ID
 
 def log_probability(theta, yobs, cov, forward_model_fn):
-    """
-    Compute log posterior probability.
+    import threading
+    import os
     
-    Parameters
-    ----------
-    theta : array
-        Parameters
-    yobs : array
-        Observations
-    cov : array
-        Covariance
-    forward_model_fn : callable
-        Function that runs forward model and returns (observables, blobs)
+    log_fH2 = theta[2]
+    thread_id = (os.getpid(), threading.get_ident())
+    
+    # Calculate step size from last proposal
+    if thread_id in _last_log_fH2:
+        delta_log_fH2 = abs(log_fH2 - _last_log_fH2[thread_id])
         
-    Returns
-    -------
-    log_prob : float
-        Log posterior probability
-    blobs : array
-        Combined derived quantities and observables
-    """
+        # Track large jumps
+        if delta_log_fH2 > 2.0:  # Threshold you care about
+            print(f"LARGE JUMP: {_last_log_fH2[thread_id]:.4f} -> {log_fH2:.4f} (Δ={delta_log_fH2:.4f})")
+
+    _last_log_fH2[thread_id] = log_fH2
     lp = log_prior(theta)
+    if theta[2] > -8 and theta[2] < -5:
+        print(lp)
     if not np.isfinite(lp):
         # Return NaN blobs for rejected samples
         nan_blobs = np.full(len(BLOB_KEYS), np.nan)

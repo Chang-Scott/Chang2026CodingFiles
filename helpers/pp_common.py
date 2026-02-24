@@ -7,9 +7,10 @@ from PlanetProfile.GetConfig import Params as globalParams, FigLbl, FigMisc, Sty
     
 def CopyCarefully(source, destination):
     try:
-        if os.path.dirname(destination) != '':
-            os.makedirs(os.path.dirname(destination), exist_ok=True)
-        shutil.copy(source, destination)
+        if not os.path.exists(destination):
+            if os.path.dirname(destination) != '':
+                os.makedirs(os.path.dirname(destination), exist_ok=True)
+            shutil.copy(source, destination)
     except OSError as err:
         raise OSError(
             f'Unable to copy from {source} to {destination}. '
