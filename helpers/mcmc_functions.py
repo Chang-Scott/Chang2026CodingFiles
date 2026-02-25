@@ -102,8 +102,9 @@ MAG_ERR = 1.5
 COV = np.diag([K2_ERR**2, H2_ERR**2, MAG_ERR**2, MAG_ERR**2, MAG_ERR**2, MAG_ERR**2])
 
 
+
 MOVES = [
-    (emcee.moves.StretchMove(), 0.9),
+    (emcee.moves.StretchMove(a=5.0), 0.9),
     (emcee.moves.DEMove(), 0.1)
 ]
 
