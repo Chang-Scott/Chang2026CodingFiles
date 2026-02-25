@@ -101,9 +101,10 @@ MAG_ERR = 1.5
 # Covariance matrix (6x6 for all observables)
 COV = np.diag([K2_ERR**2, H2_ERR**2, MAG_ERR**2, MAG_ERR**2, MAG_ERR**2, MAG_ERR**2])
 
+
 MOVES = [
-    (emcee.moves.StretchMove(), 0.5),
-    (emcee.moves.DEMove(), 0.5)
+    (emcee.moves.StretchMove(), 0.9),
+    (emcee.moves.DEMove(), 0.1)
 ]
 
 # ============================================================================
