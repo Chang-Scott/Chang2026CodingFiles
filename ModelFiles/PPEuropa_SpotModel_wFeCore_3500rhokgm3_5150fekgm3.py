@@ -22,10 +22,7 @@ Planet.Bulk.Cuncertainty = 0.0024
 Planet.Bulk.Tb_K = 269.685  # 30 km ice with 1.0x Seawater
 Planet.Do.ICEIh_THICKNESS = True
 Planet.Bulk.zb_approximate_km = 30 # The approximate ice shell thickness desired
-Planet.Ocean.Reaction.reaction = "CO2(aq) + 4 H2(aq) -> Methane(aq) + 2 H2O(aq)"
-Planet.Ocean.Reaction.disequilibriumConcentrations = {"H2(aq)": np.nan, "CO2(aq)": np.nan, "Methane(aq)": np.nan}
-Planet.Ocean.Reaction.useReferenceSpecies = True
-Planet.Ocean.Reaction.referenceSpecies = 'CO2(aq)'
+Planet.Ocean.reactionEquation = "CO2(aq) + 4 H2(aq) = Methane(aq) + 2 H2O(aq)"
 """ Layer step settings """
 Planet.Steps.nIceI = 200
 Planet.Steps.nSilMax = 300

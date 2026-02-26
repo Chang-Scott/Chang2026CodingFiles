@@ -14,6 +14,7 @@ from matplotlib.cm import get_cmap
 import importlib
 import copy
 from scipy.interpolate import make_interp_spline
+from scipy.stats import norm, gaussian_kde
 # PlanetProfile imports
 from PlanetProfile.GetConfig import Params as globalParams, FigMisc, Color, FigLbl, Style
 from PlanetProfile.Main import run, ExploreOgram, ReloadExploreOgram, PlanetProfile, LoadPPfiles
@@ -277,16 +278,112 @@ def setupPlotColorSettings(fugacity_list, CustomSolutionList, changeColorSpacing
     return
 
 
+def plot_affinity_density_distribution(logfH2RedoxStateRanges, affinities_seafloor_kJ, 
+                                        CH4_CO2_mixing_ratios, hMixingDistance_km,
+                                        modelType, output_dir,
+                                        redox_state_mean=-7.5, redox_state_std=2.0):
+    """
+    Plot affinity as a density function, weighted by the probability distribution of Europa's redox state.
+    
+    Parameters:
+    - logfH2RedoxStateRanges: Array of redox states sampled
+    - affinities_seafloor_kJ: Array of affinities [redox_state, h_mixing, CH4_CO2_ratio]
+    - CH4_CO2_mixing_ratios: List of CH4/CO2 mixing ratios
+    - hMixingDistance_km: List of mixing distances
+    - modelType: 'serpentization' or 'plume'
+    - output_dir: Directory to save figure
+    - redox_state_mean: Mean of the Gaussian distribution for inferred redox state
+    - redox_state_std: Standard deviation of the Gaussian distribution for inferred redox state
+    """
+    
+    # Calculate Gaussian probability weights for each redox state
+    redox_probabilities = norm.pdf(logfH2RedoxStateRanges, loc=redox_state_mean, scale=redox_state_std)
+    # Normalize to sum to 1
+    redox_probabilities = redox_probabilities / np.sum(redox_probabilities)
+    
+    fig, ax = plt.subplots(figsize=(10, 8))
+    
+    # Define colors for different CH4_CO2 mixing ratios
+    colors = plt.cm.viridis(np.linspace(0, 1, len(CH4_CO2_mixing_ratios)))
+    
+    # For each CH4/CO2 ratio, create a weighted density distribution
+    for j, CH4_CO2_ratio in enumerate(CH4_CO2_mixing_ratios):
+        color = colors[j]
+        
+        # Create label
+        if CH4_CO2_ratio == 0.4:
+            label = f'CH$_4$/CO$_2$ = 0.4 (Enceladus)'
+        else:
+            exponent = int(np.log10(CH4_CO2_ratio))
+            label = f'CH$_4$/CO$_2$ = $10^{{{exponent}}}$'
+        
+        # Collect all affinity values across all h_mixing distances, weighted by redox probability
+        # We'll average over h_mixing distances for simplicity
+        affinity_values = []
+        weights = []
+        
+        for i, logfH2 in enumerate(logfH2RedoxStateRanges):
+            # Average affinity across all h_mixing distances for this redox state and CH4/CO2 ratio
+            avg_affinity = np.mean(affinities_seafloor_kJ[i, :, j])
+            affinity_values.append(avg_affinity)
+            weights.append(redox_probabilities[i])
+        
+        affinity_values = np.array(affinity_values)
+        weights = np.array(weights)
+        
+        # Create a fine grid for the density plot
+        affinity_range = np.linspace(affinity_values.min() - 10, affinity_values.max() + 10, 500)
+        
+        # Calculate weighted density using kernel density estimation
+        # Repeat each affinity value proportional to its weight for KDE
+        n_samples = 10000
+        weighted_samples = np.random.choice(affinity_values, size=n_samples, p=weights)
+        
+        # Apply KDE
+        kde = gaussian_kde(weighted_samples, bw_method='scott')
+        density = kde(affinity_range)
+        
+        # Plot the density
+        ax.plot(affinity_range, density, color=color, linewidth=2.5, label=label)
+        ax.fill_between(affinity_range, 0, density, color=color, alpha=0.2)
+    
+    # Add vertical line at x=0 to indicate equilibrium
+    ax.axvline(x=0, color='red', linestyle='--', linewidth=2, label='Equilibrium', zorder=10)
+    
+    # Configure axes
+    ax.set_xlabel(r'Methanogenesis Affinity (kJ mol$^{-1}$)', fontsize=12)
+    ax.set_ylabel(r'Probability Density', fontsize=12)
+    ax.set_title(f'Probability Distribution of Methanogenesis Affinity at Seafloor ({modelType})\n' + 
+                 f'Redox State: log fH$_2$ ~ N({redox_state_mean}, {redox_state_std}$^2$)', fontsize=14)
+    
+    # Add legend
+    ax.legend(loc='best', fontsize=10, framealpha=0.9)
+    
+    # Add grid
+    ax.grid(True, alpha=0.3, linestyle='--')
+    
+    plt.tight_layout()
+    
+    # Save figure
+    fig_path = os.path.join(output_dir, f'methanogenesis_affinity_density_{modelType}.png')
+    plt.savefig(fig_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    
+    print(f"Saved affinity density plot to: {fig_path}")
+
+
 def calculate_methanogenesis_affinities(modelType):
     global globalParams
     loadUserSettings('AffinityCalculations')
     
     if modelType == 'serpentization':
         H2_molal_function = lambda bottom_thickness_km, ocean_density: 4.66*10**(-4) / (bottom_thickness_km * 1000 * ocean_density)
-        hMixingDistance_km = [0.1, 1, 10]
+        hMixingDistance_km = [10]
+        mixingTypeLabel = 'km of mixing depth'
     elif modelType == 'plume':
         H2_molal_function = lambda dilution_factor, ocean_density: 2 * 10**(-3) / dilution_factor
         hMixingDistance_km = [10**4, 10**5, 10**6]
+        mixingTypeLabel = 'dilution factor'
     # Go through each redox state and calculate the affinities
     logfH2RedoxStateRanges = np.linspace(-12, -3, 10)
     globalParams, loadNames = LoadPPfiles(globalParams, fNames=[spotModelFileName], bodyname='Europa')
@@ -365,10 +462,10 @@ def calculate_methanogenesis_affinities(modelType):
             linestyle = linestyles[h % len(linestyles)]
             
             # Create label for this specific line
-            if h == 0:
-                label = f'{base_label}, D={hMixing} dilution factor'
-            else:
-                label = f'D={hMixing} dilution factor'
+            if modelType == 'serpentization':
+                label = f'D={hMixing} {mixingTypeLabel}'
+            elif modelType == 'plume':
+                label = f'h={hMixing} {mixingTypeLabel}'
             
             # Create smooth interpolation
             logfH2_smooth = np.linspace(logfH2RedoxStateRanges[0], logfH2RedoxStateRanges[-1], 300)
@@ -379,15 +476,17 @@ def calculate_methanogenesis_affinities(modelType):
                     color=color, label=label)[0]
     
     # Add horizontal line at y=0 to indicate equilibrium
-    #ax.axhline(y=0, color='red', linestyle='--', linewidth=2, label='Equilibrium')
+    ax.axhline(y=0, color='red', linestyle='--', linewidth=2, label='Equilibrium')
 
     # Set axis limits
     ax.set_xlim([-12, -3])
-    ax.set_ylim([-100, 100])
+    ax.set_ylim([-60, 100])
     ax.set_xticks(np.arange(-12, -3 + 1, 1))
-    ax.set_yticks(np.arange(-100, 101, 20))
+    ax.set_yticks(np.arange(-60, 101, 20))
     ax.set_xlabel(FigLbl.axisLabelsExplore['oceanComp'], fontsize=12)
-    ax.set_title('Affinity for Methanogesis at the Seafloor vs. Europa\'s Redox State', fontsize=14)
+    ax.set_ylabel(r'Methanogenesis Affinity (kJ mol$^{-1}$)', fontsize=12)
+    ax.set_title(f'Affinity for Methanogesis at the Seafloor based on H$_2$ flux via {modelType}', fontsize=14)
+    
     
     # Create custom legend with two sections
     from matplotlib.lines import Line2D
@@ -408,13 +507,30 @@ def calculate_methanogenesis_affinities(modelType):
     for h, hMixing in enumerate(hMixingDistance_km):
         linestyle = linestyles[h % len(linestyles)]
         style_handles.append(Line2D([0], [0], color='black', linestyle=linestyle, 
-                                    linewidth=2, label=f'h = {hMixing} dilution factor'))
+                                    linewidth=2, label=f'{hMixing} {mixingTypeLabel}'))
     
     # Add equilibrium line
-    #equilibrium_handle = Line2D([0], [0], color='red', linestyle='--', linewidth=2, label='Equilibrium')
+    equilibrium_handle = Line2D([0], [0], color='red', linestyle='--', linewidth=2, label='Equilibrium')
+    
+    # Add background color to region
+    invertedRedoxState = [-12, -9]
+    ax.axvspan(invertedRedoxState[0], invertedRedoxState[1], 
+                alpha=0.2, color='black')
+    
+    # Add second y-axis showing biomass supported
+    ax2_biomass = ax.twinx()
+    
+    # Calculate conversion factor:
+    # affinity (kJ/mol) × (1/4.184) kcal/kJ × 0.1 available energy × (1/10) mols ATP per kcal × (1/0.02) g cells per mol ATP
+    biomass_conversion = (1/4.184) * 0.1 * (1/10) * (1/0.02)
+    
+    # Set limits for second axis based on primary axis
+    y1_min, y1_max = ax.get_ylim()
+    ax2_biomass.set_ylim([y1_min * biomass_conversion, y1_max * biomass_conversion])
+    ax2_biomass.set_ylabel(r'Biomass Supported (g cells mol$^{-1}$ yr$^{-1}$)', fontsize=12)
     
     # Combine all handles
-    all_handles = color_handles + style_handles #+ [equilibrium_handle]
+    all_handles = color_handles + [equilibrium_handle] #style_handles #+ [equilibrium_handle]
     
     # Add legend
     ax.legend(handles=all_handles, loc='best', fontsize=10, framealpha=0.9)
@@ -425,10 +541,81 @@ def calculate_methanogenesis_affinities(modelType):
     
     # Save figure
     output_dir = globalParams.FigureFiles.figPath if hasattr(globalParams.FigureFiles, 'figPath') else '.'
-    fig_path = os.path.join(output_dir, 'methanogenesis_affinity_line.png')
+    fig_path = os.path.join(output_dir, f'methanogenesis_affinity_{modelType}.png')
     plt.savefig(fig_path, dpi=300, bbox_inches='tight')
     plt.close()
-    return equilibrium_constants_seafloor
+    
+    # Create a second plot showing equilibrium and disequilibrium constants in log space
+    fig2, ax2 = plt.subplots(figsize=(10, 8))
+    
+    # Plot equilibrium constants (single line across all redox states)
+    logfH2_smooth = np.linspace(logfH2RedoxStateRanges[0], logfH2RedoxStateRanges[-1], 300)
+    spl = make_interp_spline(logfH2RedoxStateRanges, np.log10(equilibrium_constants_seafloor_array), k=2)
+    log_equilibrium_smooth = spl(logfH2_smooth)
+    ax2.plot(logfH2_smooth, log_equilibrium_smooth, 
+             color='black', linewidth=3, label='Equilibrium', zorder=10)
+    
+    # Define colors and linestyles for disequilibrium lines
+    colors = plt.cm.viridis(np.linspace(0, 1, len(CH4_CO2_mixing_ratios)))
+    linestyles = ['-', '--', '-.', ':']
+    
+    # Plot disequilibrium constants for each (CH4_CO2, hMixingDistance) pairing
+    for j, CH4_CO2_ratio in enumerate(CH4_CO2_mixing_ratios):
+        color = colors[j]
+        if CH4_CO2_ratio == 0.4:
+            base_label = f'CH$_4$/CO$_2$ = 0.4 (Enceladus)'
+        else:
+            exponent = int(np.log10(CH4_CO2_ratio))
+            base_label = f'CH$_4$/CO$_2$ = $10^{{{exponent}}}$'
+        
+        for h, hMixing in enumerate(hMixingDistance_km):
+            linestyle = linestyles[h % len(linestyles)]
+            
+            # Create label for this specific pairing
+            if modelType == 'serpentization':
+                label = f'{base_label}, D={hMixing} {mixingTypeLabel}'
+            elif modelType == 'plume':
+                label = f'{base_label}, h={hMixing} {mixingTypeLabel}'
+            
+            # Plot disequilibrium constants
+            logfH2_smooth = np.linspace(logfH2RedoxStateRanges[0], logfH2RedoxStateRanges[-1], 300)
+            spl = make_interp_spline(logfH2RedoxStateRanges, np.log10(disequilibrium_constants_seafloor_array[:, h, j]), k=2)
+            log_disequilibrium_smooth = spl(logfH2_smooth)
+            ax2.plot(logfH2_smooth, log_disequilibrium_smooth,
+                    linestyle=linestyle, linewidth=2, color=color, label=label, alpha=0.7)
+    
+    # Configure axes
+    ax2.set_xlim([-12, -3])
+    ax2.set_xticks(np.arange(-12, -3 + 1, 1))
+    ax2.set_xlabel(FigLbl.axisLabelsExplore['oceanComp'], fontsize=12)
+    ax2.set_ylabel(r'log$_{10}$(Reaction Quotient)', fontsize=12)
+    ax2.set_title(f'Equilibrium and Disequilibrium Constants for Methanogenesis at Seafloor ({modelType})', fontsize=14)
+    
+    # Add legend
+    equilibrium_handle = Line2D([0], [0], color='black', linewidth=3, label='Equilibrium')
+    ax2.legend(handles=[equilibrium_handle] + all_handles, loc='best', fontsize=10, framealpha=0.9)
+    
+    # Add grid
+    ax2.grid(True, alpha=0.3, linestyle='--')
+    
+    plt.tight_layout()
+    
+    # Save figure
+    fig_path2 = os.path.join(output_dir, f'methanogenesis_equilibrium_constants_{modelType}.png')
+    plt.savefig(fig_path2, dpi=300, bbox_inches='tight')
+    plt.close()
+    
+    # Create density distribution plot weighted by redox state probability
+    plot_affinity_density_distribution(
+        logfH2RedoxStateRanges, 
+        affinities_seafloor_kJ,
+        CH4_CO2_mixing_ratios,
+        hMixingDistance_km,
+        modelType,
+        output_dir,
+        redox_state_mean=-7.5,  # Adjust based on your inferred redox state
+        redox_state_std=2.0      # Adjust based on your uncertainty
+    )
 
 # ---------------------------
 # Helper: Draw color gradient
@@ -461,8 +648,8 @@ if __name__ == "__main__":
     spotModelFileName = 'PPEuropa_SpotModel_wFeCore_3500rhokgm3_5150fekgm3.py'
     CopyCarefully(os.path.join('ModelFiles', spotModelFileName), os.path.join('Europa', spotModelFileName))
     #run_spot_models()
-    #calculate_methanogenesis_affinities(modelType='plume')
-    ExplorationGrid, noCoreExploration = run_interior_densities(doPlots=True)
+    calculate_methanogenesis_affinities(modelType='serpentization')
+    #ExplorationGrid, noCoreExploration = run_interior_densities(doPlots=True)
     #run_best_fit_model(ExplorationGrid, noCoreExploration)
 
 

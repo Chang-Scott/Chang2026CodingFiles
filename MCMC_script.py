@@ -109,11 +109,9 @@ def run_mcmc(yobs, n_walkers, n_steps, burn_in):
     p0[2:5, 2] = np.random.uniform(-3, -4, 3)   
     p0[0:2, 2] = np.random.uniform(-12, -10, 2)
     p0[5:n_walkers, 2] = np.random.uniform(-8, -6, n_walkers - 5)
-    # Set number of parallel processes
-    n_processes = globalParams.maxCores - 2
-    print(f"\nUsing {n_processes} parallel processes")
+    print(f"\nUsing {N_PROCESSES} parallel processes")
     
-    with Pool(processes=n_processes) as pool:
+    with Pool(processes=N_PROCESSES) as pool:
         sampler = emcee.EnsembleSampler(
             n_walkers, 
             N_DIM,
@@ -199,10 +197,9 @@ if __name__ == "__main__":
     })
     
     # Run or load MCMC
-    calc_new = False
+    calc_new = True
     
     if calc_new:
-        N_WALKERS = globalParams.maxCores * 2
         samples, blobs, log_prob = run_mcmc(yobs, N_WALKERS, N_STEPS, BURN_IN)
     else:
         print("\nLoading MCMC data...")
@@ -218,6 +215,29 @@ if __name__ == "__main__":
     mcmc_data, var_names = combine_samples_blobs(samples, blobs)
     print(f"  Combined data shape: {mcmc_data.shape}")
     print(f"  Variable names: {var_names}")
+    
+    # Filter out walkers whose last sample has log_fH2 > -6
+    print("\nFiltering walkers based on final redox state...")
+    log_fH2_idx = var_names.index('log_fH2')
+    
+    # Get the last sample for each walker
+    last_samples = mcmc_data[-1, :, log_fH2_idx]  # Shape: (n_walkers,)
+    
+    # Find walkers whose final log_fH2 <= -6
+    valid_walker_mask = last_samples <= -6
+    n_valid_walkers = np.sum(valid_walker_mask)
+    n_total_walkers = mcmc_data.shape[1]
+    
+    print(f"  Total walkers: {n_total_walkers}")
+    print(f"  Valid walkers (final log_fH2 <= -6): {n_valid_walkers}")
+    print(f"  Filtered out: {n_total_walkers - n_valid_walkers}")
+    
+    if n_valid_walkers == 0:
+        print("  WARNING: No valid walkers found! Using all walkers.")
+    else:
+        # Filter the data to keep only valid walkers
+        mcmc_data = mcmc_data[:, valid_walker_mask, :]
+        print(f"  Filtered data shape: {mcmc_data.shape}")
     
     # Generate plots
     print("\nGenerating diagnostic plots...")

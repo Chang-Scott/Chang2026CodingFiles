@@ -376,7 +376,7 @@ def plot_posterior_vs_prior(mcmc_data, var_names, var_name, burn_in=BURN_IN, tru
     ax.fill_between(x, 0, prior_height, alpha=0.3, color='gray', label='Prior (Uniform)')
     ax.plot(x, np.full_like(x, prior_height), color='black', linewidth=1.5)
     # Posterior
-    kde = gaussian_kde(data)
+    kde = gaussian_kde(data, bw_method = 0.6)
     posterior = kde(x)
     ax.plot(x, posterior, 'b-', linewidth=2, label='Posterior')
     ax.fill_between(x, 0, posterior, alpha=0.3, color='blue')
@@ -387,14 +387,14 @@ def plot_posterior_vs_prior(mcmc_data, var_names, var_name, burn_in=BURN_IN, tru
         ax.axvline(true_val, color='red', linestyle='--', linewidth=2, label='True Value')
     
     # Compute statistics
-    median_val = np.median(data)
+    mean_val = np.mean(data)
     
 
-    ax.axvline(median_val, color='darkblue', linestyle='-', linewidth=1.5, alpha=0.7)
+    ax.axvline(mean_val, color='darkblue', linestyle='-', linewidth=1.5, alpha=0.7)
     
     # Annotations
     y_pos = ax.get_ylim()[1]
-    ax.text(median_val, y_pos * 0.95, f'Median: {median_val:.3f}',
+    ax.text(mean_val, y_pos * 0.95, f'Mean: {mean_val:.3f}',
             ha='center', va='top', fontsize=9, color='darkblue',
             bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
     
