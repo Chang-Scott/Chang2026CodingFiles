@@ -16,8 +16,10 @@ from PlanetProfile.Utilities.defineStructs import Constants
 from PlanetProfile.Main import LoadPPfiles, PlanetProfile
 
 # Import local modules
-from helpers.mcmc_functions import *
 from Replicate_Zolotov_2008_Elemental import Replicate_Zolotov_H2, SetSettings
+SetSettings(save_to_txt_file=False, output_figures=False, mat_output_dir='./', txt_output_dir='./', figure_output_dir='./')
+from helpers.mcmc_functions import *
+
 from helpers.pp_common import loadUserSettings, CopyCarefully
 from plotting.mcmc_plots import (
     plot_mcmc_results, plot_2d_corner, plot_custom_corner, plot_posterior_vs_prior,
@@ -25,7 +27,6 @@ from plotting.mcmc_plots import (
 )
 
 # Setup
-SetSettings(save_to_txt_file=False, output_figures=False, mat_output_dir='./', txt_output_dir='./', figure_output_dir='./')
 logger = logging.getLogger('PlanetProfile')
 logger.setLevel(logging.PROFILE)
 np.random.seed(123)
