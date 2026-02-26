@@ -118,7 +118,8 @@ def run_mcmc(yobs, n_walkers, n_steps, burn_in):
             N_DIM,
             log_probability,
             args=[yobs, COV, forward_model_wrapper],
-            pool=pool
+            pool=pool,
+            moves=MOVES
         )
         
         # Run burn-in

@@ -410,14 +410,14 @@ class JointMoveWithMeltingCurve(emcee.moves.Move):
 
 # MCMC move mixture
 MOVES = [
-    (emcee.moves.StretchMove(), 0.5),
-    #(emcee.moves.DEMove(), 0.2),
-    (JointMoveWithMeltingCurve(
+    (emcee.moves.StretchMove(a=5.0), 0.5),
+    (emcee.moves.DEMove(), 0.2),
+    """(JointMoveWithMeltingCurve(
         sigma_rho_core=SIGMA_RHO_CORE,
         sigma_rho_sil=SIGMA_RHO_SIL,
         sigma_log_fH2=SIGMA_LOG_FH2,
         sigma_Tb=SIGMA_TB
-    ), 0.5)
+    ), 0.3)"""
 ]
 
 # ============================================================================
