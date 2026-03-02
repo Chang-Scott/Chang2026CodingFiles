@@ -19,7 +19,7 @@ from PlanetProfile.Main import LoadPPfiles, PlanetProfile
 from Replicate_Zolotov_2008_Elemental import Replicate_Zolotov_H2, SetSettings
 SetSettings(save_to_txt_file=False, output_figures=False, mat_output_dir='./', txt_output_dir='./', figure_output_dir='./')
 from helpers.mcmc_functions import *
-from helpers.mcmc_functions import INVERSION_TYPE, OBSERVABLE_INDICES
+from helpers.mcmc_functions import OBSERVABLE_INDICES
 
 from helpers.pp_common import loadUserSettings, CopyCarefully
 from plotting.mcmc_plots import (
@@ -43,8 +43,7 @@ CopyCarefully(os.path.join('ModelFiles', baseModelFileName), os.path.join('Europ
 globalParams, loadNames = LoadPPfiles(globalParams, fNames=[baseModelFileName], bodyname='Europa')
 Planet = importlib.import_module(loadNames[0]).Planet
 
-
-def forward_model_wrapper(theta):
+def forward_model_wrapper(theta, inversion_type):
     """
     Wrapper for run_planetprofile that captures global context.
     This function is picklable for multiprocessing.
@@ -53,41 +52,34 @@ def forward_model_wrapper(theta):
     ----------
     theta : array
         Parameter values
+    inversion_type : str
+        Type of inversion ('Gravity', 'MagneticInduction', or 'Joint')
         
     Returns
     -------
     observables : array
-        Forward model observables (filtered based on INVERSION_TYPE)
+        Forward model observables (filtered based on inversion_type)
     blobs : array
         Derived quantities and observables
     """
-    return run_planetprofile(theta, Planet, globalParams)
+    return run_planetprofile(theta, Planet, globalParams, inversion_type)
 
-
-def initialize_walkers(n_walkers):
-    """Initialize walker positions from uniform distributions within bounds."""
-    param_bounds_array = np.array([PARAM_BOUNDS[key] for key in PARAM_KEYS])
-    return np.random.uniform(
-        low=param_bounds_array[:, 0], 
-        high=param_bounds_array[:, 1], 
-        size=(n_walkers, N_DIM)
-    )
-
-
-def run_mcmc(yobs, n_walkers, n_steps, burn_in):
+def run_mcmc(yobs, n_walkers, n_steps, burn_in, inversion_type):
     """
     Run MCMC sampling.
     
     Parameters
     ----------
     yobs : array
-        Observed values (full array, will be filtered based on INVERSION_TYPE)
+        Observed values (full array, will be filtered based on inversion_type)
     n_walkers : int
         Number of MCMC walkers
     n_steps : int
         Number of production steps
     burn_in : int
         Number of burn-in steps
+    inversion_type : str
+        Type of inversion ('Gravity', 'MagneticInduction', or 'Joint')
         
     Returns
     -------
@@ -99,14 +91,14 @@ def run_mcmc(yobs, n_walkers, n_steps, burn_in):
         Log probability values
     """
     # Filter observables and covariance based on inversion type
-    indices = OBSERVABLE_INDICES[INVERSION_TYPE]
+    indices = OBSERVABLE_INDICES[inversion_type]
     yobs_filtered = yobs[indices]
     cov_filtered = COV[np.ix_(indices, indices)]
     
     print("="*60)
     print("MCMC SAMPLING WITH PLANETPROFILE")
     print("="*60)
-    print(f"Inversion type: {INVERSION_TYPE}")
+    print(f"Inversion type: {inversion_type}")
     print(f"Number of walkers: {n_walkers}")
     print(f"Number of dimensions: {N_DIM}")
     print(f"\nObservables being used:")
@@ -127,7 +119,7 @@ def run_mcmc(yobs, n_walkers, n_steps, burn_in):
             n_walkers, 
             N_DIM,
             log_probability,
-            args=[yobs_filtered, cov_filtered, forward_model_wrapper],
+            args=[yobs_filtered, cov_filtered, forward_model_wrapper, inversion_type],
             pool=pool,
             moves=MOVES
         )
@@ -150,19 +142,17 @@ def run_mcmc(yobs, n_walkers, n_steps, burn_in):
     
     # Save results
     print("\nSaving results...")
-    np.save(f'mcmc_chain_{INVERSION_TYPE}.npy', samples)
-    np.save(f'mcmc_blobs_{INVERSION_TYPE}.npy', blobs)
-    np.save(f'mcmc_log_prob_{INVERSION_TYPE}.npy', log_prob)
-    np.save(f'mcmc_acceptance_fraction_{INVERSION_TYPE}.npy', sampler.acceptance_fraction)
-    np.save(f'mcmc_burn_in_{INVERSION_TYPE}.npy', burn_in)
-    print(f"Saved: mcmc_chain_{INVERSION_TYPE}.npy, mcmc_blobs_{INVERSION_TYPE}.npy, mcmc_log_prob_{INVERSION_TYPE}.npy, mcmc_acceptance_fraction_{INVERSION_TYPE}.npy, mcmc_burn_in_{INVERSION_TYPE}.npy")
+    np.save(f'mcmc_chain_{inversion_type}.npy', samples)
+    np.save(f'mcmc_blobs_{inversion_type}.npy', blobs)
+    np.save(f'mcmc_log_prob_{inversion_type}.npy', log_prob)
+    np.save(f'mcmc_acceptance_fraction_{inversion_type}.npy', sampler.acceptance_fraction)
+    np.save(f'mcmc_burn_in_{inversion_type}.npy', burn_in)
+    print(f"Saved: mcmc_chain_{inversion_type}.npy, mcmc_blobs_{inversion_type}.npy, mcmc_log_prob_{inversion_type}.npy, mcmc_acceptance_fraction_{inversion_type}.npy, mcmc_burn_in_{inversion_type}.npy")
     
     return samples, blobs, log_prob
 
 
-def mcmc(inversion_type):
-    global INVERSION_TYPE
-    INVERSION_TYPE = inversion_type
+def setup_mcmc(inversion_type):
     # Calculate true observations
     print("Calculating true observations...")
     true_params = {
@@ -214,12 +204,12 @@ def mcmc(inversion_type):
     calc_new = True
     
     if calc_new:
-        samples, blobs, log_prob = run_mcmc(yobs, N_WALKERS, N_STEPS, BURN_IN)
+        samples, blobs, log_prob = run_mcmc(yobs, N_WALKERS, N_STEPS, BURN_IN, inversion_type)
     else:
-        print(f"\nLoading MCMC data for {INVERSION_TYPE} inversion...")
-        samples = np.load(f'mcmc_chain_{INVERSION_TYPE}.npy')
-        blobs = np.load(f'mcmc_blobs_{INVERSION_TYPE}.npy')
-        log_prob = np.load(f'mcmc_log_prob_{INVERSION_TYPE}.npy')
+        print(f"\nLoading MCMC data for {inversion_type} inversion...")
+        samples = np.load(f'mcmc_chain_{inversion_type}.npy')
+        blobs = np.load(f'mcmc_blobs_{inversion_type}.npy')
+        log_prob = np.load(f'mcmc_log_prob_{inversion_type}.npy')
         print(f"  Total steps: {samples.shape[0]}")
         print(f"  Burn-in steps: {BURN_IN}")
         print(f"  Production steps: {samples.shape[0] - BURN_IN}")
@@ -240,24 +230,7 @@ def mcmc(inversion_type):
     
     # Histogram diagnostic plots
     print("\nGenerating histogram diagnostic plots...")
-    
-    """# Filter data based on redox state (log_fH2) between -4 and -3
-    log_fH2_idx = var_names.index('log_fH2')
-    mask = (mcmc_data[BURN_IN:, :, log_fH2_idx] >= -4) & (mcmc_data[BURN_IN:, :, log_fH2_idx] <= -3)
-    
-    # Apply filter and reshape to maintain (steps, walkers, variables) format
-    filtered_data = mcmc_data[BURN_IN:][mask]
-    n_filtered = filtered_data.shape[0]
-    n_vars = mcmc_data.shape[-1]
-    mcmc_data = filtered_data.reshape(n_filtered, 1, n_vars)
-    # Print statistics for mag_i_syn
-    mag_i_syn_idx = var_names.index('mag_i_orb')
-    mag_i_syn_data = filtered_data[:, mag_i_syn_idx]
-    print(f"\nMag_i_orb statistics (filtered data):")
-    print(f"  Min: {np.min(mag_i_syn_data):.3f}")
-    print(f"  Max: {np.max(mag_i_syn_data):.3f}")
-    print(f"  Mean: {np.mean(mag_i_syn_data):.3f}")
-    print(f"  Std: {np.std(mag_i_syn_data):.3f}")"""
+
     plot_variable_histograms(
         mcmc_data,
         var_names=var_names,
@@ -278,7 +251,7 @@ def mcmc(inversion_type):
     plot_custom_corner(
         mcmc_data,
         var_names=var_names,
-        plot_vars=['log_fH2', ''],
+        plot_vars=['log_fH2', 'ice_thickness_km'],
         true_values=true_params,
     )
     # Posterior vs prior plots
@@ -296,6 +269,6 @@ def mcmc(inversion_type):
     print("="*60)
 
 if __name__ == "__main__":
-    mcmc(inversion_type='Joint')
-    mcmc(inversion_type='Gravity')
-    mcmc(inversion_type='MagneticInduction')
+    setup_mcmc(inversion_type='Gravity')
+    setup_mcmc(inversion_type='MagneticInduction')
+    setup_mcmc(inversion_type='Joint')

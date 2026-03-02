@@ -2,7 +2,6 @@
 MCMC Functions
 Combined module containing configuration, forward model, and likelihood functions.
 """
-from PlanetProfile.Thermodynamics.Reaktoro.reaktoroProps import SetupReaktoroDatabases
 import numpy as np
 import copy
 import time
@@ -12,8 +11,6 @@ from scipy.stats import norm
 from PlanetProfile.Main import PlanetProfile
 from PlanetProfile.Utilities.defineStructs import EOSlist
 from helpers.pp_common import loadUserSettings
-from PlanetProfile.Thermodynamics.Reaktoro.reaktoroProps import SetupReaktoroDatabases
-from PlanetProfile.Thermodynamics.HydroEOS import GetOceanEOS, GetTfreeze, GetPfreeze
 from Replicate_Zolotov_2008_Elemental import Replicate_Zolotov_H2
 import emcee
 from PlanetProfile.GetConfig import Params as globalParams
@@ -31,9 +28,6 @@ OBSERVABLE_KEYS = ['k2', 'h2', 'mag_r_orb', 'mag_i_orb', 'mag_r_syn', 'mag_i_syn
 
 # Combined blob keys (derived + observables)
 BLOB_KEYS = DERIVED_KEYS + OBSERVABLE_KEYS
-
-# Inversion type selection
-INVERSION_TYPE = 'Joint'  # Options: 'Gravity', 'MagneticInduction', 'Joint'
 
 # Observable indices for different inversion types
 OBSERVABLE_INDICES = {
@@ -110,10 +104,10 @@ ALL_LABELS = {**PARAM_LABELS, **DERIVED_LABELS, **OBSERVABLE_LABELS}
 # ============================================================================
 
 N_DIM = len(PARAM_KEYS)
-BURN_IN = 500
-N_STEPS = 500
+BURN_IN = 1000
+N_STEPS = 10000
 # Set number of parallel processes
-N_PROCESSES = 4
+N_PROCESSES = globalParams.maxCores
 N_WALKERS = N_PROCESSES * 2
 
 # Observation uncertainties
@@ -128,8 +122,8 @@ MOVES = [(emcee.moves.StretchMove(a = 5.0), 0.7), (emcee.moves.DEMove(), 0.3)]
 # ============================================================================
 # FORWARD MODEL
 # ============================================================================
-
-def run_planetprofile(theta, planet_template, global_params):
+    
+def run_planetprofile(theta, planet_template, global_params, inversion_type):
     """
     Run PlanetProfile forward model.
     
@@ -141,11 +135,13 @@ def run_planetprofile(theta, planet_template, global_params):
         Template planet to copy
     global_params : Params object
         Global configuration
+    inversion_type : str
+        Type of inversion ('Gravity', 'MagneticInduction', or 'Joint')
         
     Returns
     -------
     observables : array
-        Filtered observables based on INVERSION_TYPE
+        Filtered observables based on inversion_type
     blobs : array
         Combined array of derived quantities and observables
         (ice_thickness_km, ocean_thickness_km, core_radius_km,
@@ -176,7 +172,7 @@ def run_planetprofile(theta, planet_template, global_params):
         print(planetRun.Do.VALID)
     if not planetRun.Do.VALID:
         # Return NaN arrays (size based on inversion type)
-        n_obs = len(OBSERVABLE_INDICES[INVERSION_TYPE])
+        n_obs = len(OBSERVABLE_INDICES[inversion_type])
         observables = np.full(n_obs, np.nan)
         blobs = np.full(11, np.nan)
         return observables, blobs
@@ -185,13 +181,13 @@ def run_planetprofile(theta, planet_template, global_params):
     gravity_obs = np.full(2, np.nan)
     magnetic_obs = np.full(4, np.nan)
     
-    if INVERSION_TYPE in ['Gravity', 'Joint']:
+    if inversion_type in ['Gravity', 'Joint']:
         gravity_obs = np.array([
             planetRun.Gravity.kAmp,
             planetRun.Gravity.hAmp
         ])
     
-    if INVERSION_TYPE in ['MagneticInduction', 'Joint']:
+    if inversion_type in ['MagneticInduction', 'Joint']:
         magnetic_obs = np.array([
             np.real(planetRun.Magnetic.Bi1Tot_nT[0]),
             np.imag(planetRun.Magnetic.Bi1Tot_nT[0]),
@@ -201,7 +197,7 @@ def run_planetprofile(theta, planet_template, global_params):
     
     # Combine all observables and filter based on inversion type
     all_observables = np.concatenate([gravity_obs, magnetic_obs])
-    indices = OBSERVABLE_INDICES[INVERSION_TYPE]
+    indices = OBSERVABLE_INDICES[inversion_type]
     filtered_observables = all_observables[indices]
     
     # Combine derived quantities and observables for blobs (always include all)
@@ -259,6 +255,15 @@ def combine_samples_blobs(samples, blobs):
 # LIKELIHOOD FUNCTIONS
 # ============================================================================
 
+def initialize_walkers(n_walkers):
+    """Initialize walker positions from uniform distributions within bounds."""
+    param_bounds_array = np.array([PARAM_BOUNDS[key] for key in PARAM_KEYS])
+    return np.random.uniform(
+        low=param_bounds_array[:, 0], 
+        high=param_bounds_array[:, 1], 
+        size=(n_walkers, N_DIM)
+    )
+    
 def log_prior(theta):
     """
     Check if parameters are within bounds.
@@ -306,7 +311,7 @@ def log_likelihood(observables, yobs, cov):
 # Add at module level in mcmc_functions.py
 _last_log_fH2 = {}  # Dictionary keyed by thread/process ID
 
-def log_probability(theta, yobs, cov, forward_model_fn):
+def log_probability(theta, yobs, cov, forward_model_fn, inversion_type):
     
     lp = log_prior(theta)
     if not np.isfinite(lp):
@@ -314,7 +319,7 @@ def log_probability(theta, yobs, cov, forward_model_fn):
         nan_blobs = np.full(len(BLOB_KEYS), np.nan)
         return -np.inf, nan_blobs
     
-    observables, blobs = forward_model_fn(theta)
+    observables, blobs = forward_model_fn(theta, inversion_type)
     ll = log_likelihood(observables, yobs, cov)
     
     return lp + ll, blobs
