@@ -24,7 +24,7 @@ DO_PARALLEL = True
 PARAM_KEYS = ['rho_core', 'rho_sil', 'log_fH2', 'Tb_K']
 DERIVED_KEYS = ['ice_thickness_km', 'ocean_thickness_km', 'core_radius_km',
                 'ocean_mean_density_kgm3', 'mean_conductivity_Sm']
-OBSERVABLE_KEYS = ['k2', 'h2', 'mag_r_orb', 'mag_i_orb', 'mag_r_syn', 'mag_i_syn']
+OBSERVABLE_KEYS = ['MoI', 'k2', 'h2', 'mag_r_orb', 'mag_i_orb', 'mag_r_syn', 'mag_i_syn']
 
 # Combined blob keys (derived + observables)
 BLOB_KEYS = DERIVED_KEYS + OBSERVABLE_KEYS
@@ -178,7 +178,7 @@ def run_planetprofile(theta, planet_template, global_params, inversion_type):
         # Return NaN arrays (size based on inversion type)
         n_obs = len(OBSERVABLE_INDICES[inversion_type])
         observables = np.full(n_obs, np.nan)
-        blobs = np.full(11, np.nan)
+        blobs = np.full(len(BLOB_KEYS), np.nan)
         return observables, blobs
     
     # Extract observables based on inversion type
