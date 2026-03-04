@@ -2,7 +2,6 @@
 MCMC Plotting Functions
 """
 import os
-from tkinter.constants import NONE
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
@@ -18,7 +17,7 @@ from helpers.mcmc_functions import (
 
 
 def plot_2d_corner(mcmc_data, var_names, var1_name, var2_name, burn_in=BURN_IN, 
-                   true_values=None, use_bounds=True, inversion_type=NONE):
+                   true_values=None, use_bounds=True, inversion_type=None):
     """
     Create a simple 2D corner plot between any two variables.
     
@@ -127,7 +126,7 @@ def plot_2d_corner(mcmc_data, var_names, var1_name, var2_name, burn_in=BURN_IN,
 
 
 def plot_blob_distributions(mcmc_data, var_names, burn_in=BURN_IN, 
-                            inversion_type=NONE):
+                            inversion_type=None):
     """
     Plot distributions of derived quantities (blobs).
     
@@ -172,7 +171,7 @@ def plot_blob_distributions(mcmc_data, var_names, burn_in=BURN_IN,
 
 
 def plot_custom_corner(mcmc_data, var_names, plot_vars=None, burn_in=BURN_IN, true_values=None, 
-                       gridsize=50, cmap="magma", inversion_type=NONE):
+                       gridsize=50, cmap="magma", inversion_type=None):
     """
     Plot custom corner plot with hexbin off-diagonal plots and no diagonal plots.
     
