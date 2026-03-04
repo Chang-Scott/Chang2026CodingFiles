@@ -26,7 +26,7 @@ Planet.Bulk.zb_approximate_km = 30 # The approximate ice shell thickness desired
 Planet.Steps.nIceI = 50
 Planet.Steps.nSilMax = 300
 Planet.Steps.nCore = 10
-Planet.Steps.iSilStart = 0
+Planet.Steps.iSilStart = 50
 
 """ Hydrosphere assumptions/settings """
 Planet.Ocean.comp = 'CustomSolutionExplore = TBD'

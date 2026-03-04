@@ -27,7 +27,7 @@ Planet.Ocean.reactionEquation = "CO2(aq) + 4 H2(aq) = Methane(aq) + 2 H2O(aq)"
 Planet.Steps.nIceI = 200
 Planet.Steps.nSilMax = 300
 Planet.Steps.nCore = 10
-Planet.Steps.iSilStart = 0
+Planet.Steps.iSilStart = 200
 
 """ Hydrosphere assumptions/settings """
 Planet.Ocean.comp = 'CustomSolutionExplore = TBD'

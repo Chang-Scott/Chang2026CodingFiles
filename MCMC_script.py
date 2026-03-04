@@ -113,17 +113,32 @@ def run_mcmc(yobs, n_walkers, n_steps, burn_in, inversion_type):
     p0[0:2, 2] = np.random.uniform(-12, -10, 2)
     p0[5:n_walkers, 2] = np.random.uniform(-8, -6, n_walkers - 5)
     print(f"\nUsing {N_PROCESSES} parallel processes")
-    
-    with Pool(processes=N_PROCESSES) as pool:
+    if DO_PARALLEL:
+        with Pool(processes=N_PROCESSES) as pool:
+            sampler = emcee.EnsembleSampler(
+                n_walkers, 
+                N_DIM,
+                log_probability,
+                args=[yobs_filtered, cov_filtered, forward_model_wrapper, inversion_type],
+                pool=pool,
+                moves=MOVES
+            )
+            
+            # Run burn-in
+            print(f"\nRunning burn-in for {burn_in} steps...")
+            state = sampler.run_mcmc(p0, burn_in, progress=True)
+            
+            # Run production
+            print(f"\nRunning production for {n_steps} steps...")
+            sampler.run_mcmc(state, n_steps, progress=True)
+    else:
         sampler = emcee.EnsembleSampler(
             n_walkers, 
             N_DIM,
             log_probability,
             args=[yobs_filtered, cov_filtered, forward_model_wrapper, inversion_type],
-            pool=pool,
             moves=MOVES
         )
-        
         # Run burn-in
         print(f"\nRunning burn-in for {burn_in} steps...")
         state = sampler.run_mcmc(p0, burn_in, progress=True)
@@ -236,13 +251,19 @@ def inversion(inversion_type):
     plot_variable_histograms(
         mcmc_data,
         var_names=var_names,
-        plot_vars=['k2', 'h2', 'mag_r_orb', 'mag_i_orb', 'mag_r_syn', 'mag_i_syn'],  # Plot all parameters
+        plot_vars=['MoI','k2', 'h2', 'mag_r_orb', 'mag_i_orb', 'mag_r_syn', 'mag_i_syn'],  # Plot all parameters
         true_values=true_params,
         inversion_type=inversion_type,
     )
-    
     # Custom corner plot
     print("\nGenerating custom corner plot...")
+    plot_custom_corner(
+        mcmc_data,
+        var_names=var_names,
+        plot_vars=['ocean_thickness_km', 'ice_thickness_km'],
+        true_values=true_params,
+        inversion_type=inversion_type,
+    )
     plot_custom_corner(
         mcmc_data,
         var_names=var_names,
@@ -250,7 +271,6 @@ def inversion(inversion_type):
         true_values=true_params,
         inversion_type=inversion_type,
     )
-    
     print("\nGenerating custom corner plot...")
     plot_custom_corner(
         mcmc_data,
