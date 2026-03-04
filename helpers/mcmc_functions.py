@@ -31,9 +31,10 @@ BLOB_KEYS = DERIVED_KEYS + OBSERVABLE_KEYS
 
 # Observable indices for different inversion types
 OBSERVABLE_INDICES = {
-    'Gravity': [0, 1],  # k2, h2
-    'MagneticInduction': [2, 3, 4, 5],  # mag_r_orb, mag_i_orb, mag_r_syn, mag_i_syn
-    'Joint': [0, 1, 2, 3, 4, 5]  # All observables
+    'Gravity': [0], # MoI only
+    'GravityandTides': [0, 1, 2],  # MoI and tides
+    'MagneticInduction': [3, 4, 5, 6],  # Magnetic induction
+    'Joint': [0, 1, 2, 3, 4, 5, 6]  # MoI, tides, mag_r_orb, mag_i_orb, mag_r_syn, mag_i_syn
 }
 
 
@@ -49,14 +50,15 @@ PARAM_BOUNDS = {
 }
 
 DERIVED_PLOTTING_BOUNDS = {
-    'ice_thickness_km': [0, 90],
-    'ocean_thickness_km': [0, 200],
+    'ice_thickness_km': [0, 140],
+    'ocean_thickness_km': [0, 150],
     'core_radius_km': [200, 600],
     'ocean_mean_density_kgm3': [1000, 1300],
     'mean_conductivity_Sm': [0, 5]
 }
 
 OBSERVABLE_PLOTTING_BOUNDS = {
+    'MoI':  [0.350, 0.360],
     'k2': [0.25, 0.35],
     'h2': [1.1, 1.3],
     'mag_r_orb': [7.5, 12.5],
@@ -88,8 +90,9 @@ DERIVED_LABELS = {
 }
 
 OBSERVABLE_LABELS = {
-    'k2': r'$k_2$ (Love number)',
-    'h2': r'$h_2$ (Love number)',
+    'MoI': r'Moment of Inertia',
+    'k2': r'$k_2$ Love number',
+    'h2': r'$h_2$ Love number',
     'mag_r_orb': 'Mag Real Orbital (nT)',
     'mag_i_orb': 'Mag Imag Orbital (nT)',
     'mag_r_syn': 'Mag Real Synodic (nT)',
@@ -104,19 +107,20 @@ ALL_LABELS = {**PARAM_LABELS, **DERIVED_LABELS, **OBSERVABLE_LABELS}
 # ============================================================================
 
 N_DIM = len(PARAM_KEYS)
-BURN_IN = 1000
+BURN_IN = 5000
 N_STEPS = 10000
 # Set number of parallel processes
 N_PROCESSES = globalParams.maxCores
 N_WALKERS = N_PROCESSES * 2
 
 # Observation uncertainties
+MOI_ERR = 0.001
 K2_ERR = 0.018
 H2_ERR = 0.1
 MAG_ERR = 1.5
 
 # Covariance matrix (6x6 for all observables)
-COV = np.diag([K2_ERR**2, H2_ERR**2, MAG_ERR**2, MAG_ERR**2, MAG_ERR**2, MAG_ERR**2])
+COV = np.diag([MOI_ERR**2, K2_ERR**2, H2_ERR**2, MAG_ERR**2, MAG_ERR**2, MAG_ERR**2, MAG_ERR**2])
 
 MOVES = [(emcee.moves.StretchMove(a = 5.0), 0.7), (emcee.moves.DEMove(), 0.3)]
 # ============================================================================
@@ -178,11 +182,16 @@ def run_planetprofile(theta, planet_template, global_params, inversion_type):
         return observables, blobs
     
     # Extract observables based on inversion type
-    gravity_obs = np.full(2, np.nan)
+    gravity_obs = np.full(1, np.nan)
+    tides_obs = np.full(2, np.nan)
     magnetic_obs = np.full(4, np.nan)
     
-    if inversion_type in ['Gravity', 'Joint']:
+    if inversion_type in ['Gravity', 'GravityandTides', 'Joint']:
         gravity_obs = np.array([
+            planetRun.CMR2mean
+        ])
+    if inversion_type in ['GravityandTides', 'Joint']:
+        tides_obs = np.array([
             planetRun.Gravity.kAmp,
             planetRun.Gravity.hAmp
         ])
@@ -196,7 +205,7 @@ def run_planetprofile(theta, planet_template, global_params, inversion_type):
         ])
     
     # Combine all observables and filter based on inversion type
-    all_observables = np.concatenate([gravity_obs, magnetic_obs])
+    all_observables = np.concatenate([gravity_obs, tides_obs, magnetic_obs])
     indices = OBSERVABLE_INDICES[inversion_type]
     filtered_observables = all_observables[indices]
     
@@ -209,6 +218,7 @@ def run_planetprofile(theta, planet_template, global_params, inversion_type):
         planetRun.Ocean.rhoMean_kgm3,
         planetRun.Ocean.sigmaMean_Sm,
         # Observables (saved again for easy access in plotting)
+        planetRun.CMR2mean,
         planetRun.Gravity.kAmp,
         planetRun.Gravity.hAmp,
         np.real(planetRun.Magnetic.Bi1Tot_nT[0]),
@@ -308,8 +318,6 @@ def log_likelihood(observables, yobs, cov):
     
     residual = observables - yobs
     return -0.5 * residual.T @ np.linalg.inv(cov) @ residual
-# Add at module level in mcmc_functions.py
-_last_log_fH2 = {}  # Dictionary keyed by thread/process ID
 
 def log_probability(theta, yobs, cov, forward_model_fn, inversion_type):
     

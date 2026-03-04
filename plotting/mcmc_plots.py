@@ -2,6 +2,7 @@
 MCMC Plotting Functions
 """
 import os
+from tkinter.constants import NONE
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
@@ -17,7 +18,7 @@ from helpers.mcmc_functions import (
 
 
 def plot_2d_corner(mcmc_data, var_names, var1_name, var2_name, burn_in=BURN_IN, 
-                   true_values=None, use_bounds=True, output_filename="mcmc_figures/2d_corner.png"):
+                   true_values=None, use_bounds=True, inversion_type=NONE):
     """
     Create a simple 2D corner plot between any two variables.
     
@@ -37,8 +38,6 @@ def plot_2d_corner(mcmc_data, var_names, var1_name, var2_name, burn_in=BURN_IN,
         True values for overlay
     use_bounds : bool, optional
         Whether to apply bounds to axes
-    output_filename : str
-        Output file path
     """
     # Flatten data after burn-in
     flat_data = mcmc_data[burn_in:].reshape(-1, mcmc_data.shape[-1])
@@ -121,14 +120,14 @@ def plot_2d_corner(mcmc_data, var_names, var1_name, var2_name, burn_in=BURN_IN,
     ax_right.tick_params(labelleft=False)
     ax_right.grid(alpha=0.3)
 
-    os.makedirs(os.path.dirname(output_filename), exist_ok=True)
-    plt.savefig(output_filename, dpi=300, bbox_inches='tight')
+    os.makedirs('mcmc_figures', exist_ok=True)
+    plt.savefig(f'mcmc_figures/blob_distributions_{inversion_type}.png', dpi=300, bbox_inches='tight')
     plt.close()
-    print(f"Saved {output_filename}")
+    print(f"Saved blob_distributions_{inversion_type}.png")
 
 
 def plot_blob_distributions(mcmc_data, var_names, burn_in=BURN_IN, 
-                            output_filename="mcmc_figures/blob_distributions.png"):
+                            inversion_type=NONE):
     """
     Plot distributions of derived quantities (blobs).
     
@@ -140,8 +139,8 @@ def plot_blob_distributions(mcmc_data, var_names, burn_in=BURN_IN,
         List of variable names corresponding to columns in mcmc_data
     burn_in : int
         Number of burn-in steps to discard
-    output_filename : str
-        Output file path
+    inversion_type : str
+        Type of inversion ('Gravity', 'MagneticInduction', or 'Joint')
     """
     # Flatten data after burn-in
     flat_data = mcmc_data[burn_in:].reshape(-1, mcmc_data.shape[-1])
@@ -166,14 +165,14 @@ def plot_blob_distributions(mcmc_data, var_names, burn_in=BURN_IN,
     axes[-1].axis('off')
     
     plt.tight_layout()
-    os.makedirs(os.path.dirname(output_filename), exist_ok=True)
-    plt.savefig(output_filename, dpi=300, bbox_inches='tight')
+    os.makedirs('mcmc_figures', exist_ok=True)
+    plt.savefig(f'mcmc_figures/blob_distributions_{inversion_type}.png', dpi=300, bbox_inches='tight')
     plt.close()
-    print(f"Saved {output_filename}")
+    print(f"Saved blob_distributions_{inversion_type}.png")
 
 
 def plot_custom_corner(mcmc_data, var_names, plot_vars=None, burn_in=BURN_IN, true_values=None, 
-                       gridsize=200, cmap="magma", output_filename=None):
+                       gridsize=50, cmap="magma", inversion_type=NONE):
     """
     Plot custom corner plot with hexbin off-diagonal plots and no diagonal plots.
     
@@ -193,8 +192,8 @@ def plot_custom_corner(mcmc_data, var_names, plot_vars=None, burn_in=BURN_IN, tr
         Hexbin grid size
     cmap : str
         Colormap name
-    output_filename : str, optional
-        Output file path. If None, uses default naming.
+    inversion_type : str
+        Type of inversion ('Gravity', 'MagneticInduction', or 'Joint')
     """
     # Flatten data after burn-in
     flat_data = mcmc_data[burn_in:].reshape(-1, mcmc_data.shape[-1])
@@ -242,14 +241,7 @@ def plot_custom_corner(mcmc_data, var_names, plot_vars=None, burn_in=BURN_IN, tr
             y_data = data[:, i]
             
             # Create hexbin
-            hb = ax.hexbin(
-                x_data, y_data,
-                gridsize=gridsize,
-                cmap=cmap,
-                mincnt=1,
-                norm=LogNorm()
-            )
-            
+            hb = ax.hist2d(x_data, y_data, bins=gridsize, norm=LogNorm(), cmap=cmap)
             # Overlay true values if provided
             if true_values:
                 x_var = plot_vars[j]
@@ -314,18 +306,17 @@ def plot_custom_corner(mcmc_data, var_names, plot_vars=None, burn_in=BURN_IN, tr
                        hspace=0.05, wspace=0.05)
     
     # Save
-    if output_filename is None:
-        var_str = "_".join(plot_vars)
-        output_filename = f"mcmc_figures/custom_corner_{var_str}.png"
-    
-    os.makedirs(os.path.dirname(output_filename), exist_ok=True)
-    plt.savefig(output_filename, dpi=300, bbox_inches='tight', facecolor='white')
+    var_str = "_".join(plot_vars)
+    # Set figure size to 4x8
+    fig.set_size_inches(4, 8)
+    os.makedirs('mcmc_figures', exist_ok=True)
+    plt.savefig(f'mcmc_figures/custom_corner_{inversion_type}_{var_str}.png', dpi=300, bbox_inches='tight', facecolor='white')
     plt.close()
-    print(f"Saved {output_filename}")
+    print(f"Saved custom_corner_{inversion_type}_{var_str}.png")
 
 
-def plot_posterior_vs_prior(mcmc_data, var_names, var_name, burn_in=BURN_IN, true_values=None, 
-                            output_filename=None, figsize=(10, 6)):
+def plot_posterior_vs_prior(mcmc_data, var_names, var_name, inversion_type, burn_in=BURN_IN, true_values=None, 
+                            figsize=(10, 6)):
     """
     Plot posterior distribution vs prior distribution for a single variable.
     
@@ -337,12 +328,12 @@ def plot_posterior_vs_prior(mcmc_data, var_names, var_name, burn_in=BURN_IN, tru
         List of variable names corresponding to columns in mcmc_data
     var_name : str
         Name of the variable to plot
+    inversion_type : str
+        Type of inversion ('Gravity', 'MagneticInduction', or 'Joint')
     burn_in : int
         Number of burn-in steps to discard
     true_values : dict, optional
         Dictionary of true parameter values {var_name: value}
-    output_filename : str, optional
-        Output file path. If None, uses default naming.
     figsize : tuple
         Figure size
     """
@@ -417,19 +408,17 @@ def plot_posterior_vs_prior(mcmc_data, var_names, var_name, burn_in=BURN_IN, tru
         spine.set_edgecolor('black')
     
     # Save
-    if output_filename is None:
-        output_filename = f"mcmc_figures/posterior_vs_prior_{var_name}.png"
-    
-    os.makedirs(os.path.dirname(output_filename), exist_ok=True)
-    plt.savefig(output_filename, dpi=300, bbox_inches='tight', facecolor='white')
+    os.makedirs('mcmc_figures', exist_ok=True)
+    plt.savefig(f'mcmc_figures/posterior_vs_prior_{inversion_type}_{var_name}.png', dpi=300, bbox_inches='tight', facecolor='white')
     plt.close()
-    print(f"Saved {output_filename}")
+    print(f"Saved posterior_vs_prior_{inversion_type}_{var_name}.png")
 
 
-def plot_mcmc_results(samples, log_prob, burn_in=BURN_IN):
+def plot_mcmc_results(samples, log_prob, inversion_type, burn_in=BURN_IN):
     """
     Generate diagnostic plots for MCMC results.
-    
+    inversion_type : str
+        Type of inversion ('Gravity', 'MagneticInduction', or 'Joint')
     Parameters
     ----------
     samples : ndarray
@@ -462,12 +451,13 @@ def plot_mcmc_results(samples, log_prob, burn_in=BURN_IN):
     axes[-1].axvline(burn_in, color='red', linestyle='--', linewidth=2)
     axes[-1].set_ylabel('Log Probability', fontsize=10)
     axes[-1].set_xlabel('Step', fontsize=12)
+    axes[-1].set_ylim(-10, 0)
     axes[-1].grid(alpha=0.3)
     
     plt.tight_layout()
-    plt.savefig('mcmc_figures/trace_plots.png', dpi=300, bbox_inches='tight')
+    plt.savefig(f'mcmc_figures/trace_plots_{inversion_type}.png', dpi=300, bbox_inches='tight')
     plt.close()
-    print("Saved trace_plots.png")
+    print(f"Saved trace_plots_{inversion_type}.png")
     
     # Corner plot
     print("Creating corner plot...")
@@ -481,13 +471,13 @@ def plot_mcmc_results(samples, log_prob, burn_in=BURN_IN):
         title_fmt='.3f',
         title_kwargs={"fontsize": 12}
     )
-    plt.savefig('mcmc_figures/corner_plot.pdf', dpi=300, bbox_inches='tight', transparent=True)
+    plt.savefig(f'mcmc_figures/corner_plot_{inversion_type}.pdf', dpi=300, bbox_inches='tight', transparent=True)
     plt.close()
-    print("Saved corner_plot.pdf")
+    print(f"Saved corner_plot_{inversion_type}.pdf")
 
 
-def plot_variable_histograms(mcmc_data, var_names, plot_vars=None, burn_in=BURN_IN, 
-                             true_values=None, bins=50, output_filename="mcmc_figures/variable_histograms.png"):
+def plot_variable_histograms(mcmc_data, var_names, plot_vars=None, inversion_type=None, burn_in=BURN_IN, 
+                             true_values=None, bins=50):
     """
     Plot histograms of selected variables for diagnostic purposes.
     
@@ -503,14 +493,14 @@ def plot_variable_histograms(mcmc_data, var_names, plot_vars=None, burn_in=BURN_
         List of variable names corresponding to columns in mcmc_data
     plot_vars : list of str, optional
         List of variable names to plot. If None, plots all parameters.
+    inversion_type : str
+        Type of inversion ('Gravity', 'MagneticInduction', or 'Joint')
     burn_in : int
         Number of burn-in steps to discard
     true_values : dict, optional
         Dictionary of true parameter values {var_name: value}
     bins : int or str
         Number of bins for histograms (or 'auto')
-    output_filename : str
-        Output file path
     """
     # Flatten data after burn-in
     flat_data = mcmc_data[burn_in:].reshape(-1, mcmc_data.shape[-1])
@@ -610,7 +600,7 @@ def plot_variable_histograms(mcmc_data, var_names, plot_vars=None, burn_in=BURN_
         axes[idx].axis('off')
     
     plt.tight_layout()
-    os.makedirs(os.path.dirname(output_filename), exist_ok=True)
-    plt.savefig(output_filename, dpi=300, bbox_inches='tight', facecolor='white')
+    os.makedirs('mcmc_figures', exist_ok=True)
+    plt.savefig(f'mcmc_figures/variable_histograms_{inversion_type}.png', dpi=300, bbox_inches='tight', facecolor='white')
     plt.close()
-    print(f"Saved {output_filename}")
+    print(f"Saved variable_histograms_{inversion_type}.png")

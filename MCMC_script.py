@@ -152,7 +152,7 @@ def run_mcmc(yobs, n_walkers, n_steps, burn_in, inversion_type):
     return samples, blobs, log_prob
 
 
-def setup_mcmc(inversion_type):
+def inversion(inversion_type):
     # Calculate true observations
     print("Calculating true observations...")
     true_params = {
@@ -173,6 +173,7 @@ def setup_mcmc(inversion_type):
     
     # Extract true observables
     yobs = np.array([
+        TruePlanet.CMR2mean,
         TruePlanet.Gravity.kAmp,
         TruePlanet.Gravity.hAmp,
         np.real(TruePlanet.Magnetic.Bi1Tot_nT[0]),
@@ -181,7 +182,7 @@ def setup_mcmc(inversion_type):
         np.imag(TruePlanet.Magnetic.Bi1Tot_nT[1])
     ])
     
-    print(f"True observations: k2={yobs[0]:.4f}, h2={yobs[1]:.4f}")
+    print(f"True observations: MoI={yobs[0]:.4f}, k2={yobs[1]:.4f}, h2={yobs[2]:.4f}")
     print(f"Magnetic (orbital): {yobs[2]:.2f} + {yobs[3]:.2f}i nT")
     print(f"Magnetic (synodic): {yobs[4]:.2f} + {yobs[5]:.2f}i nT")
     
@@ -192,7 +193,8 @@ def setup_mcmc(inversion_type):
         'core_radius_km': TruePlanet.Core.Rmean_m / 1e3,
         'ocean_mean_density_kgm3': TruePlanet.Ocean.rhoMean_kgm3,
         'mean_conductivity_Sm': TruePlanet.Ocean.sigmaMean_Sm,
-        'k2': yobs[0],
+        'MoI': yobs[0],
+        'k2': yobs[1],
         'h2': yobs[1],
         'mag_r_orb': yobs[2],
         'mag_i_orb': yobs[3],
@@ -226,7 +228,7 @@ def setup_mcmc(inversion_type):
     print("\nGenerating diagnostic plots...")
     
     # Trace plots and corner plot
-    plot_mcmc_results(samples, log_prob)
+    plot_mcmc_results(samples, log_prob, inversion_type)
     
     # Histogram diagnostic plots
     print("\nGenerating histogram diagnostic plots...")
@@ -236,6 +238,7 @@ def setup_mcmc(inversion_type):
         var_names=var_names,
         plot_vars=['k2', 'h2', 'mag_r_orb', 'mag_i_orb', 'mag_r_syn', 'mag_i_syn'],  # Plot all parameters
         true_values=true_params,
+        inversion_type=inversion_type,
     )
     
     # Custom corner plot
@@ -243,16 +246,18 @@ def setup_mcmc(inversion_type):
     plot_custom_corner(
         mcmc_data,
         var_names=var_names,
-        plot_vars=['log_fH2', 'Tb_K'],
+        plot_vars=['log_fH2', 'ice_thickness_km'],
         true_values=true_params,
+        inversion_type=inversion_type,
     )
     
     print("\nGenerating custom corner plot...")
     plot_custom_corner(
         mcmc_data,
         var_names=var_names,
-        plot_vars=['log_fH2', 'ice_thickness_km'],
+        plot_vars=['log_fH2', 'ocean_thickness_km', 'ice_thickness_km'],
         true_values=true_params,
+        inversion_type=inversion_type,
     )
     # Posterior vs prior plots
     print("\nGenerating posterior vs prior plots...")
@@ -261,7 +266,8 @@ def setup_mcmc(inversion_type):
         var_names=var_names,
         var_name='log_fH2',
         true_values=true_params,
-    )
+        inversion_type=inversion_type,
+            )
     
     print("\n" + "="*60)
     print("MCMC RUN COMPLETE!")
@@ -269,6 +275,7 @@ def setup_mcmc(inversion_type):
     print("="*60)
 
 if __name__ == "__main__":
-    setup_mcmc(inversion_type='Gravity')
-    setup_mcmc(inversion_type='MagneticInduction')
-    setup_mcmc(inversion_type='Joint')
+    inversion(inversion_type='Gravity')
+    inversion(inversion_type='GravityandTides')
+    inversion(inversion_type='MagneticInduction')
+    inversion(inversion_type='Joint')
