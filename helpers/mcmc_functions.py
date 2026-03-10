@@ -21,7 +21,7 @@ loadUserSettings('Inversion')
 
 # Define all variable names in order
 DO_PARALLEL = True
-PARAM_KEYS = ['rho_core', 'rho_sil', 'log_fH2', 'Tb_K']
+PARAM_KEYS = ['rho_core', 'rho_sil', 'log_fH2', 'Tb_K', 'PHydroSeafloorSet_MPa']
 DERIVED_KEYS = ['ice_thickness_km', 'ocean_thickness_km', 'core_radius_km',
                 'ocean_mean_density_kgm3', 'mean_conductivity_Sm']
 OBSERVABLE_KEYS = ['MoI', 'k2', 'h2', 'mag_r_orb', 'mag_i_orb', 'mag_r_syn', 'mag_i_syn']
@@ -44,9 +44,10 @@ OBSERVABLE_INDICES = {
 
 PARAM_BOUNDS = {
     'rho_core': [5150, 8000],
-    'rho_sil': [3000, 4000],
+    'rho_sil': [2500, 4500],
     'log_fH2': [-12.0, -3.0],
-    'Tb_K': [250, 273]
+    'Tb_K': [250, 273],
+    'PHydroSeafloorSet_MPa': [0, 400]
 }
 
 DERIVED_PLOTTING_BOUNDS = {
@@ -155,13 +156,15 @@ def run_planetprofile(theta, planet_template, global_params, inversion_type):
     planetRun = copy.deepcopy(planet_template)
     
     # Unpack parameters
-    rho_core, rho_sil, log_fH2, Tb_K = theta
+    rho_core, rho_sil, log_fH2, Tb_K, PHydroSeafloorSet_MPa = theta
     
     # Set parameters
     planetRun.Core.rhoFe_kgm3 = rho_core
     planetRun.Do.ICEIh_THICKNESS = False
     planetRun.Sil.rhoSilWithCore_kgm3 = rho_sil
     planetRun.Bulk.Tb_K = Tb_K
+    planetRun.Do.SPECIFY_HYDROSPHERE_SEAFLOOR_PRESSURE = True
+    planetRun.Ocean.PHydroSeafloorSet_MPa = PHydroSeafloorSet_MPa
     
     # Round redox state to nearest 0.05 to reduce computat
     log_fH2 = round(log_fH2 / 0.05) * 0.05

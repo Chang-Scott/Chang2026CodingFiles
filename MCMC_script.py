@@ -171,10 +171,10 @@ def inversion(inversion_type):
     # Calculate true observations
     print("Calculating true observations...")
     true_params = {
-        'rho_core': 5150.0,
-        'rho_sil': 3500.0,
-        'log_fH2': -10.2,
-        'Tb_K': 266.0
+        'rho_core': 6180.0,
+        'rho_sil': 3630.0,
+        'log_fH2': -5,
+        'Tb_K': 270.6
     }
     
     TruePlanet = copy.deepcopy(Planet)
@@ -183,6 +183,7 @@ def inversion(inversion_type):
     TruePlanet.Sil.rhoSilWithCore_kgm3 = true_params['rho_sil']
     TruePlanet.Ocean.comp = Replicate_Zolotov_H2([true_params['log_fH2']])[0]
     TruePlanet.Bulk.Tb_K = true_params['Tb_K']
+    TruePlanet.Bulk.Cmeasured = 0.347
     
     TruePlanet, _ = PlanetProfile(TruePlanet, globalParams)
     
@@ -247,19 +248,6 @@ def inversion(inversion_type):
     
     # Histogram diagnostic plots
     print("\nGenerating histogram diagnostic plots...")
-
-  # Filter data for ocean thickness under 10 km
-    print("\nFiltering data for ocean thickness < 10 km...")
-    ocean_thickness_idx = var_names.index('ocean_thickness_km')
-    filter_mask = mcmc_data[:, :, ocean_thickness_idx] < 1
-    mcmc_data_filtered = mcmc_data[filter_mask].reshape(-1, mcmc_data.shape[-1])
-    print(f"  Original samples: {mcmc_data.shape[0]}")
-    print(f"  Filtered samples: {mcmc_data_filtered.shape[0]}")
-    print(f"  Percentage retained: {100 * mcmc_data_filtered.shape[0] / mcmc_data.shape[0]:.1f}%")
-    
-    # Use filtered data for subsequent plots
-    mcmc_data = mcmc_data_filtered
-    
     plot_variable_histograms(
         mcmc_data,
         var_names=var_names,
