@@ -248,6 +248,18 @@ def inversion(inversion_type):
     # Histogram diagnostic plots
     print("\nGenerating histogram diagnostic plots...")
 
+  # Filter data for ocean thickness under 10 km
+    print("\nFiltering data for ocean thickness < 10 km...")
+    ocean_thickness_idx = var_names.index('ocean_thickness_km')
+    filter_mask = mcmc_data[:, :, ocean_thickness_idx] < 1
+    mcmc_data_filtered = mcmc_data[filter_mask].reshape(-1, mcmc_data.shape[-1])
+    print(f"  Original samples: {mcmc_data.shape[0]}")
+    print(f"  Filtered samples: {mcmc_data_filtered.shape[0]}")
+    print(f"  Percentage retained: {100 * mcmc_data_filtered.shape[0] / mcmc_data.shape[0]:.1f}%")
+    
+    # Use filtered data for subsequent plots
+    mcmc_data = mcmc_data_filtered
+    
     plot_variable_histograms(
         mcmc_data,
         var_names=var_names,
@@ -255,6 +267,7 @@ def inversion(inversion_type):
         true_values=true_params,
         inversion_type=inversion_type,
     )
+
     # Custom corner plot
     print("\nGenerating custom corner plot...")
     plot_custom_corner(

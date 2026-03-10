@@ -339,265 +339,131 @@ def plot_affinity_density_distribution(logfH2RedoxStateRanges, affinities_seaflo
 def calculate_methanogenesis_affinities():
     global globalParams
     loadUserSettings('AffinityCalculations')
-    
-    H2_CH4_mixing_ratios = [10**-2, 4, 10**5] # Barbier et. al, 2020
-    O2_CH4_mixing_ratios = [10-8, 1, 10**8]
-    H2_concentration_serpentization_molal = 5e-3 # Li et. al, 2025
-    H2_concentration_plume_molal = 2e-5 # 
-    O2_concentration_plume_molal = 4e-7
-    H2Flux_mols_yr = 10**9 # Vance et. al, 2016
-    O2Flux_mols_yr = 1.2*10**10
-    # Go through each redox state and calculate the affinities
+
+    # Range of excess H2 concentrations to explore (molal), from low-serpentization to high-plume end
+    deltaT_ranges_K = np.logspace(0, 3, 4)
+    H2Flux_mols_yr = 10**8  # Vance et. al, 2016
+    serpentizationHeat_J_yr = 0.01 * 4 * np.pi * (1451 * 1000)**2 * 60 * 60 * 24 * 365
+    H2_concentrations_range_molal = H2Flux_mols_yr * 4184 * deltaT_ranges_K / serpentizationHeat_J_yr
+
     logfH2RedoxStateRanges = np.linspace(-12, -3, 10)
     globalParams, loadNames = LoadPPfiles(globalParams, fNames=[spotModelFileName], bodyname='Europa')
     Planet = importlib.import_module(loadNames[0]).Planet
-    #Setup Planet settings
     Planet.Do.ICEIh_THICKNESS = True
     Planet.Bulk.zb_approximate_km = 30
-    
-    # Setup reaction parameters
-    
-    # Create array to hold equilibrium constants
-    equilibrium_constants_seafloor_array = np.full((len(logfH2RedoxStateRanges)), np.nan)
-    equilibrium_constants_seatop_array = np.full((len(logfH2RedoxStateRanges)), np.nan)
-    
-    # Create array to hold disequilibrium constants
-    disequilibrium_constants_seafloor_array_serpentization = np.full((len(logfH2RedoxStateRanges), len(H2_CH4_mixing_ratios)), np.nan)
-    disequilibrium_constants_seafloor_array_plume = np.full((len(logfH2RedoxStateRanges), len(H2_CH4_mixing_ratios)), np.nan)
-    disequilibrium_constants_seatop_array = np.full((len(logfH2RedoxStateRanges), len(O2_CH4_mixing_ratios)), np.nan)
-    # Create array to hold affinities
-    affinities_seafloor_kJ_serpentization = np.full((len(logfH2RedoxStateRanges),len(H2_CH4_mixing_ratios)), np.nan)
-    affinities_seafloor_kJ_plume = np.full((len(logfH2RedoxStateRanges), len(H2_CH4_mixing_ratios)), np.nan)
-    affinities_seatop_kJ = np.full((len(logfH2RedoxStateRanges), len(O2_CH4_mixing_ratios)), np.nan)
+
+    # Arrays indexed [redox_state, H2_concentration]
+    equilibrium_constants_seafloor_array = np.full(len(logfH2RedoxStateRanges), np.nan)
+    affinities_seafloor_kJ = np.full((len(logfH2RedoxStateRanges), len(deltaT_ranges_K)), np.nan)
+
     for i, logfH2RedoxState in enumerate(logfH2RedoxStateRanges):
         oceanComp = Replicate_Zolotov_H2([logfH2RedoxState])[0]
-        # Create Planet Object
         planetRun = copy.deepcopy(Planet)
         planetRun.Ocean.comp = oceanComp
-        # Run with methanogenesis
         planetRun.Ocean.reactionEquation = "CO2(aq) + 4 H2(aq) = Methane(aq) + 2 H2O(aq)"
         planetRun, _ = PlanetProfile(planetRun, globalParams)
-        
-        # Calculate equilibrium constants
+
         equilibrium_constants_seafloor = planetRun.Ocean.equilibriumReactionConstant[-1]
         equilibrium_constants_seafloor_array[i] = equilibrium_constants_seafloor
-        
-        
-        # Get pressure and tempearture at seafloor
-        Pseafloor_MPa = planetRun.P_MPa[planetRun.Steps.nHydro-1]
-        Tseafloor_K = planetRun.T_K[planetRun.Steps.nHydro-1]
-        for j, H2_CH4_mixing_ratio in enumerate(H2_CH4_mixing_ratios):
-            # Calculate disequilibrium constants
-            H2index = np.where(np.array(planetRun.Ocean.aqueousSpecies) == 'H2(aq)')[0][0]
-            H2_equilibrium_molal_seafloor = planetRun.Ocean.aqueousSpeciesAmount_mol[H2index, -1]
-            CO2index = np.where(np.array(planetRun.Ocean.aqueousSpecies) == 'CO2(aq)')[0][0]
-            CO2_equilibrium_molal_seafloor = planetRun.Ocean.aqueousSpeciesAmount_mol[CO2index, -1]
-            CH4index = np.where(np.array(planetRun.Ocean.aqueousSpecies) == 'Methane(aq)')[0][0]
-            CH4_equilibrium_molal_seafloor = planetRun.Ocean.aqueousSpeciesAmount_mol[CH4index, -1]
-            K = CH4_equilibrium_molal_seafloor / (H2_equilibrium_molal_seafloor**4 * CO2_equilibrium_molal_seafloor)
-            
-            disequilibriumConcentrations_molal = { 'H2O(aq)': 55.51, 'H2(aq)': 0,'H+': 0, 'OH-': 0, 'CO2(aq)': 0, 'Methane(aq)': 0}
-            db, system, state, conditions, solver, props = SupcrtGenerator('H2O(aq) H2(aq) H+ OH-', disequilibriumConcentrations_molal, "mol", "supcrt16-organics", None, Constants.PhreeqcToSupcrtNames, 
-                            200, rktDatabase = None)
-            state.pressure(Pseafloor_MPa, "MPa")
-            state.temperature(Tseafloor_K, "K")
-            
-            # Calculate disequilibrium constants for serpentization
-            CH4_disequilibrium_molal = H2_concentration_serpentization_molal / H2_CH4_mixing_ratio
-            state.setSpeciesAmount('H2(aq)', H2_concentration_serpentization_molal, "mol")
-            state.setSpeciesAmount('CO2(aq)', CO2_equilibrium_molal_seafloor, "mol")
-            state.setSpeciesAmount('Methane(aq)', CH4_disequilibrium_molal, "mol")
-            props.update(state)
-            Q =  float(props.speciesActivity('Methane(aq)')) * float(props.speciesActivity('H2O(aq)'))**2 / (float(props.speciesActivity('H2(aq)'))**4 * float(props.speciesActivity('CO2(aq)')))
-            disequilibrium_constants_seafloor_array_serpentization[i, j] = Q
-            affinities_seafloor_kJ_serpentization[i, j] = 2.3026 * 8.314 * Tseafloor_K * (np.log10(equilibrium_constants_seafloor) - np.log10(disequilibrium_constants_seafloor_array_serpentization[i, j])) / 1000
-            
-            # Calculate disequilibrium constants for plume
-            CH4_disequilibrium_molal = H2_concentration_plume_molal / H2_CH4_mixing_ratio
-            state.setSpeciesAmount('H2(aq)', H2_concentration_plume_molal, "mol")
-            state.setSpeciesAmount('CO2(aq)', CO2_equilibrium_molal_seafloor, "mol")
-            state.setSpeciesAmount('Methane(aq)', CH4_disequilibrium_molal, "mol")
-            props.update(state)
-            Q =  float(props.speciesActivity('Methane(aq)')) * float(props.speciesActivity('H2O(aq)'))**2 / (float(props.speciesActivity('H2(aq)'))**4 * float(props.speciesActivity('CO2(aq)')))
-            disequilibrium_constants_seafloor_array_plume[i, j] = Q
-            affinities_seafloor_kJ_plume[i, j] = 2.3026 * 8.314 * Tseafloor_K * (np.log10(equilibrium_constants_seafloor) - np.log10(disequilibrium_constants_seafloor_array_plume[i, j])) / 1000
-        
-        
-        # Rerun with methanotrophy
-        """planetRun.Ocean.reactionEquation = "HS-(aq) + 2 O2(aq) = SO4-2(aq) + H+(aq)"
-        planetRun, _ = PlanetProfile(planetRun, globalParams)
-        equilibrium_constants_seatop = planetRun.Ocean.equilibriumReactionConstant[0]
-        equilibrium_constants_seatop_array[i] = equilibrium_constants_seatop
-        # Get pressure and tempearture at seatop
-        Pseatop_MPa = planetRun.P_MPa[planetRun.Steps.nHydro-1]
-        Tseatop_K = planetRun.T_K[planetRun.Steps.nHydro-1]
-        for j, CO2_CH4_mixing_ratio in enumerate(O2_CH4_mixing_ratios):
-            # Calculate disequilibrium constants
-            CH4index = np.where(np.array(planetRun.Ocean.aqueousSpecies) == 'Methane(aq)')[0][0]
-            CH4_equilibrium_molal_seatop = planetRun.Ocean.aqueousSpeciesAmount_mol[CH4index, 0]
-            CO2index = np.where(np.array(planetRun.Ocean.aqueousSpecies) == 'CO2(aq)')[0][0]
-            CO2_equilibrium_molal_seatop = planetRun.Ocean.aqueousSpeciesAmount_mol[CO2index, 0]
-            disequilibriumConcentrations_molal = { 'H2O(aq)': 55.51, 'H2(aq)': 0,'H+': 0, 'OH-': 0, 'O2(aq)': 0, 'SO4-2(aq)': 0, 'HS-(aq)': 0}
-            db, system, state, conditions, solver, props = SupcrtGenerator('H2O(aq) H2(aq) H+ OH- O2(aq)', disequilibriumConcentrations_molal, "mol", "supcrt16-organics", None, Constants.PhreeqcToSupcrtNames, 
-                            200, rktDatabase = None)
-            state.pressure(Pseatop_MPa, "MPa")
-            state.temperature(Tseatop_K, "K")
-            state.setSpeciesAmount('O2(aq)', O2_concentration_plume_molal, "mol")
-            state.setSpeciesAmount('HS-(aq)', HS_concentration_plume_molal, "mol")
-            props.update(state)
-            Q =  CO2_CH4_mixing_ratio * (float(props.speciesActivity('H2O(aq)'))**2) /  float(props.speciesActivity('O2(aq)'))**2
-            disequilibrium_constants_seatop_array[i, j] = Q
-            affinities_seatop_kJ[i, j] = 2.3026 * 8.314 * Tseatop_K * (np.log10(equilibrium_constants_seatop) - np.log10(disequilibrium_constants_seatop_array[i, j])) / 1000
-    """# Create scatter line plot of methanogenesis affinities
-    fig, ax = plt.subplots(figsize=(10, 8))
-    
-    # Define colormap for serpentization vs high temperature fluids
-    serpentization_color = 'green'
-    plume_color = 'red'
-    
-    # Define different line styles for CH4/CO2 ratios
-    linestyles = ['-', (0, (8,4)), (0, (2,4))]
-    
-    # Plot lines for each CH4_CO2 mixing ratio and hMixingDistance combination
-    for j, H2_CH4_mixing_ratio in enumerate(H2_CH4_mixing_ratios):
 
-            
-        # Create smooth interpolation for serpentization
-        logfH2_smooth = np.linspace(logfH2RedoxStateRanges[0], logfH2RedoxStateRanges[-1], 300)
-        spl = make_interp_spline(logfH2RedoxStateRanges, affinities_seafloor_kJ_serpentization[:, j], k=3)
-        affinity_smooth = spl(logfH2_smooth)
-        line = ax.plot(logfH2_smooth, affinity_smooth, 
-                linestyle=linestyles[j], linewidth=2,
-                color=serpentization_color)[0]
-        
-        # Create smooth interpolation for plume
-        spl = make_interp_spline(logfH2RedoxStateRanges, affinities_seafloor_kJ_plume[:, j], k=3)
-        affinity_smooth = spl(logfH2_smooth)
-        line = ax.plot(logfH2_smooth, affinity_smooth, 
-                linestyle=linestyles[j], linewidth=2,
-                color=plume_color)[0]
-    
-    # Add shape between lines
-    # Fill between the top and bottom H2_CH4_mixing_ratio lines for plume data
+        Pseafloor_MPa = planetRun.P_MPa[planetRun.Steps.nHydro - 1]
+        Tseafloor_K = planetRun.T_K[planetRun.Steps.nHydro - 1]
+
+        H2index = np.where(np.array(planetRun.Ocean.aqueousSpecies) == 'H2(aq)')[0][0]
+        H2_equilibrium_molal_seafloor = planetRun.Ocean.aqueousSpeciesAmount_mol[H2index, -1]
+        CO2index = np.where(np.array(planetRun.Ocean.aqueousSpecies) == 'CO2(aq)')[0][0]
+        CO2_equilibrium_molal_seafloor = planetRun.Ocean.aqueousSpeciesAmount_mol[CO2index, -1]
+        CH4index = np.where(np.array(planetRun.Ocean.aqueousSpecies) == 'Methane(aq)')[0][0]
+        CH4_equilibrium_molal_seafloor = planetRun.Ocean.aqueousSpeciesAmount_mol[CH4index, -1]
+
+        # Equilibrium CH4/CO2 ratio from PlanetProfile
+        CH4_CO2_eq_ratio = CH4_equilibrium_molal_seafloor / CO2_equilibrium_molal_seafloor
+        print(f'CH4/CO2 (eq) = {CH4_CO2_eq_ratio:.4e} for redox state {logfH2RedoxState}')
+
+        disequilibriumConcentrations_molal = {'H2O(aq)': 55.51, 'H2(aq)': 0, 'H+': 0, 'OH-': 0, 'CO2(aq)': 0, 'Methane(aq)': 0}
+        db, system, state, conditions, solver, props = SupcrtGenerator(
+            'H2O(aq) H2(aq) H+ OH-', disequilibriumConcentrations_molal, "mol",
+            "supcrt16-organics", None, Constants.PhreeqcToSupcrtNames, 200, rktDatabase=None)
+        state.pressure(Pseafloor_MPa, "MPa")
+        state.temperature(Tseafloor_K, "K")
+
+        for k, H2_conc in enumerate(H2_concentrations_range_molal):
+            H2_disequilibrium_molal = H2_conc + H2_equilibrium_molal_seafloor
+            state.setSpeciesAmount('H2(aq)', H2_disequilibrium_molal, "mol")
+            props.update(state)
+            Q = (CH4_CO2_eq_ratio
+                 * float(props.speciesActivity('H2O(aq)'))**2
+                 / float(props.speciesActivity('H2(aq)'))**4)
+            affinities_seafloor_kJ[i, k] = (
+                2.3026 * 8.314 * Tseafloor_K
+                * (np.log10(equilibrium_constants_seafloor) - np.log10(Q))
+                / 1000)
+
+    # --- Plot: one line per H2 concentration vs. redox state ---
+    from matplotlib.ticker import FuncFormatter
+    import matplotlib.cm as cm
+    import matplotlib.colors as mcolors
+
+    deltaT_min = deltaT_ranges_K[0]
+    deltaT_max = deltaT_ranges_K[-1]
+    cmap = cm.get_cmap('viridis')
+    norm_deltaT = mcolors.Normalize(vmin=deltaT_min, vmax=deltaT_max)
+
+    # Wider figure; leave explicit room on the right for the twin axis + colorbar
+    fig, ax = plt.subplots(figsize=(13, 8))
+    fig.subplots_adjust(left=0.08, right=0.68, top=0.90, bottom=0.10)
+
     logfH2_smooth = np.linspace(logfH2RedoxStateRanges[0], logfH2RedoxStateRanges[-1], 300)
-    
-    # Get smooth interpolations for top and bottom plume lines
-    spl_top = make_interp_spline(logfH2RedoxStateRanges, affinities_seafloor_kJ_plume[:, 0], k=3)
-    affinity_top = spl_top(logfH2_smooth)
-    
-    spl_bottom = make_interp_spline(logfH2RedoxStateRanges, affinities_seafloor_kJ_plume[:, -1], k=3)
-    affinity_bottom = spl_bottom(logfH2_smooth)
-    
-    ax.fill_between(logfH2_smooth, affinity_top, affinity_bottom, 
-                    alpha=0.3, color=plume_color)
-    
-    # Fill between the top and bottom H2_CH4_mixing_ratio lines for serpentization data
-    logfH2_smooth = np.linspace(logfH2RedoxStateRanges[0], logfH2RedoxStateRanges[-1], 300)
-    
-    # Get smooth interpolations for top and bottom serpentization lines
-    spl_top = make_interp_spline(logfH2RedoxStateRanges, affinities_seafloor_kJ_serpentization[:, 0], k=3)
-    affinity_top = spl_top(logfH2_smooth)
-    
-    spl_bottom = make_interp_spline(logfH2RedoxStateRanges, affinities_seafloor_kJ_serpentization[:, -1], k=3)
-    affinity_bottom = spl_bottom(logfH2_smooth)
-    
-    ax.fill_between(logfH2_smooth, affinity_top, affinity_bottom, 
-                    alpha=0.3, color=serpentization_color)
-    
-    # Add horizontal line at y=0 to indicate equilibrium
+    for k, deltaT_K in enumerate(deltaT_ranges_K):
+        color = cmap(norm_deltaT(deltaT_K))
+        spl = make_interp_spline(logfH2RedoxStateRanges, affinities_seafloor_kJ[:, k], k=3)
+        affinity_smooth = spl(logfH2_smooth)
+        ax.plot(logfH2_smooth, affinity_smooth, linewidth=2, color=color)
+
+    # Equilibrium reference line
     ax.axhline(y=0, color='black', linestyle='solid', linewidth=2, label='Equilibrium')
 
-    # Set axis limits
     ax.set_xlim([-12, -3])
-    ax.set_ylim([-10, 250])
+    ax.set_ylim([0, 250])
     ax.set_xticks(np.arange(-12, -3 + 1, 1))
     ax.set_yticks(np.arange(0, 251, 25))
     ax.set_xlabel(FigLbl.axisLabelsExplore['oceanComp'], fontsize=12)
     ax.set_ylabel(r'Methanogenesis Affinity (kJ (mol of reaction)$^{-1}$)', fontsize=12)
-    ax.set_title(f'Affinity and Biomass Supported forMethanogesis at the Seafloor')
-    
-    from matplotlib.lines import Line2D
-    # First section: CH4/CO2 mixing ratios (colors)
-    linestyle_handles = []
-    for j, H2_CH4_mixing_ratio in enumerate(H2_CH4_mixing_ratios):
-        linestyle = linestyles[j]
-        if H2_CH4_mixing_ratio == 4.0:
-            label = f'H$_2$/CH$_4$ = 4.0 (Enceladus)'
-        else:
-            exponent = int(np.log10(H2_CH4_mixing_ratio))
-            label = f'H$_2$/CH$_4$ = $10^{{{exponent}}}$'
-        linestyle_handles.append(Line2D([0], [0], linestyle=linestyle, linewidth=1, label=label))
+    ax.set_title('Methanogenesis Affinity at the Seafloor')
+    ax.legend(loc='best', fontsize=10, framealpha=0.9)
+    ax.grid(True, alpha=0.3, linestyle='--')
 
-    # Add equilibrium line
-    equilibrium_handle = Line2D([0], [0], color='black', linestyle='--', linewidth=2, label='Equilibrium')
-    
-    # Add background color to region
-    invertedRedoxState = [-12, -9]
-    #ax.axvspan(invertedRedoxState[0], invertedRedoxState[1], alpha=0.2, color='black')
-    
-    # Add second y-axis showing biomass supported
+    # Second y-axis: biomass supported (twin of ax, shares the same plot area)
     ax2_biomass = ax.twinx()
-    
-    # Calculate conversion factor:
-    # affinity (kJ/mol) × (1/4.184) kcal/kJ × 0.1 available energy × (1/10) mols ATP per kcal × (1/0.02) g cells per mol ATP
-    
-    biomass_conversion = (H2Flux_mols_yr / 4) * (1/4.184) * 0.1 * (1/10) * (1/0.02) # Jaksoky and Shock, 2010
-    
-    # Set limits for second axis based on primary axis
+    biomass_conversion = (H2Flux_mols_yr / 4) * (1 / 4.184) * 0.1 * (1 / 10) * (1 / 0.02)  # Jaksoyev and Shock, 2010
     y1_min, y1_max = ax.get_ylim()
     ax2_biomass.set_ylim([y1_min * biomass_conversion, y1_max * biomass_conversion])
     ax2_biomass.set_ylabel(r'Biomass Supported (g of cells yr$^{-1}$)', fontsize=12)
-    from matplotlib.ticker import FuncFormatter
 
     def abs_sci_formatter(x, pos):
         if not np.isfinite(x) or x == 0:
             return "0"
-
         x = abs(x)
         exponent = int(np.floor(np.log10(x)))
         mantissa = x / 10**exponent
-
         return rf"${mantissa:.1f}\times10^{{{exponent}}}$"
 
     ax2_biomass.yaxis.set_major_formatter(FuncFormatter(abs_sci_formatter))
-    
-    # Combine all handles
-    all_handles = linestyle_handles + [equilibrium_handle] #style_handles #+ [equilibrium_handle]
-    
-    # Add legend
-    ax.legend(handles=all_handles, loc='best', fontsize=10, framealpha=0.9)
-    # Add grid
-    ax.grid(True, alpha=0.3, linestyle='--')
-    
-    plt.tight_layout()
-    
-    # Save figure
+
+    # Colorbar in its own explicitly-positioned axes, to the right of both ax and ax2_biomass
+    sm = cm.ScalarMappable(cmap=cmap, norm=norm_deltaT)
+    sm.set_array([])
+    cax = fig.add_axes([0.87, 0.10, 0.025, 0.80])  # [left, bottom, width, height] in figure coords
+    cbar = fig.colorbar(sm, cax=cax)
+    cbar.set_label(r'$\Delta T$ (K)', fontsize=12)
+
     output_dir = globalParams.FigureFiles.figPath if hasattr(globalParams.FigureFiles, 'figPath') else '.'
-    fig_path = os.path.join(output_dir, f'methanogenesis_affinity.png')
+    fig_path = os.path.join(output_dir, 'methanogenesis_affinity.png')
     plt.savefig(fig_path, dpi=300, bbox_inches='tight')
-    #plt.show()
     plt.close()
-    
-    # Create a second plot showing equilibrium and disequilibrium constants in log space
-    fig2, ax2 = plt.subplots(figsize=(10, 8))
-    methanotrophy_color = 'blue'
-    for i, CO2_CH4_mixing_ratio in enumerate(O2_CH4_mixing_ratios):
-        # Create smooth interpolation for methanotrophy
-        logfH2_smooth = np.linspace(logfH2RedoxStateRanges[0], logfH2RedoxStateRanges[-1], 300)
-        spl = make_interp_spline(logfH2RedoxStateRanges, affinities_seatop_kJ[:, i], k=3)
-        affinity_smooth = spl(logfH2_smooth)
-        line = ax2.plot(logfH2_smooth, affinity_smooth, 
-                linestyle=linestyles[i], linewidth=2,
-                color=methanotrophy_color)[0]
-    
-    # Add horizontal line at y=0 to indicate equilibrium
-    ax2.axhline(y=0, color='black', linestyle='solid', linewidth=2, label='Equilibrium')
-    
-    # Set axis limits
-    ax2.set_xlim([-12, -3])
-    ax2.set_ylim([-10, 250])
-    ax2.set_xticks(np.arange(-12, -3 + 1, 1))
-    ax2.set_yticks(np.arange(0, 251, 25))
+    print(f"Saved affinity plot to: {fig_path}")
+
+
 # ---------------------------
 # Helper: Draw color gradient
 # ---------------------------

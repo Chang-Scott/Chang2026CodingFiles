@@ -629,10 +629,11 @@ def generate_chemical_system(db, elemental_molal, Do_minerals = False, use_activ
         pyrite = MineralPhase("Pyrite")
         daphnite = MineralPhase('Daphnite-14A')
         siderite = MineralPhase("Siderite")
+        artinite = MineralPhase("Artinite")
 
         # Create the system
         #system = ChemicalSystem(db, solution, gases, minerals)
-        system = ChemicalSystem(db, solution, gases, MgNaCaKSaponite, goethite, amorphous_silica, gypsum, daphnite, magnesite, siderite, Montmor, pyrite, dolomite, calcite, Chrysotile, Sylvite, andradite, pyrrhotite, magnetite, sepiolite)
+        system = ChemicalSystem(db, solution, gases, MgNaCaKSaponite, goethite, amorphous_silica, gypsum, daphnite, magnesite, siderite, Montmor, pyrite, dolomite, calcite, Chrysotile, Sylvite, andradite, pyrrhotite, magnetite, sepiolite, artinite)
 
     else:
         system = ChemicalSystem(db, solution, gases)
