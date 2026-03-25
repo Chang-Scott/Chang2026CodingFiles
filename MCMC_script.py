@@ -18,8 +18,7 @@ from PlanetProfile.Main import LoadPPfiles, PlanetProfile
 # Import local modules
 from Replicate_Zolotov_2008_Elemental import Replicate_Zolotov_H2, SetSettings
 SetSettings(save_to_txt_file=False, output_figures=False, mat_output_dir='./', txt_output_dir='./', figure_output_dir='./')
-from helpers.mcmc_functions import *
-from helpers.mcmc_functions import OBSERVABLE_INDICES
+from helpers.mcmc_functions_test import *
 
 from helpers.pp_common import loadUserSettings, CopyCarefully
 from plotting.mcmc_plots import (
@@ -109,9 +108,6 @@ def run_mcmc(yobs, n_walkers, n_steps, burn_in, inversion_type):
     
     # Initialize walkers
     p0 = initialize_walkers(n_walkers)
-    p0[2:5, 2] = np.random.uniform(-3, -4, 3)   
-    p0[0:2, 2] = np.random.uniform(-12, -10, 2)
-    p0[5:n_walkers, 2] = np.random.uniform(-8, -6, n_walkers - 5)
     print(f"\nUsing {N_PROCESSES} parallel processes")
     if DO_PARALLEL:
         with Pool(processes=N_PROCESSES) as pool:
@@ -173,17 +169,26 @@ def inversion(inversion_type):
     true_params = {
         'rho_core': 6180.0,
         'rho_sil': 3630.0,
-        'log_fH2': -5,
-        'Tb_K': 270.6
+        'PHydroSeafloorSet_MPa': 210,
+        'Pbset_MPa': 50,
+        'rhoOcean_kgm3': 1100.0,
+        'rhoIce_kgm3': 1000
     }
     
     TruePlanet = copy.deepcopy(Planet)
     TruePlanet.Do.ICEIh_THICKNESS = False
+    TruePlanet.Ocean.comp = 'PureH2O'
     TruePlanet.Core.rhoFe_kgm3 = true_params['rho_core']
     TruePlanet.Sil.rhoSilWithCore_kgm3 = true_params['rho_sil']
-    TruePlanet.Ocean.comp = Replicate_Zolotov_H2([true_params['log_fH2']])[0]
-    TruePlanet.Bulk.Tb_K = true_params['Tb_K']
-    TruePlanet.Bulk.Cmeasured = 0.347
+    TruePlanet.Do.SPECIFY_HYDROSPHERE_SEAFLOOR_PRESSURE = True
+    TruePlanet.Ocean.PHydroSeafloorSet_MPa = true_params['PHydroSeafloorSet_MPa']
+    TruePlanet.Bulk.PbSet_MPa = true_params['Pbset_MPa']
+    TruePlanet.Do.ConstantProps['Ocean'] = True
+    TruePlanet.Do.ConstantProps['Ice'] = True
+    TruePlanet.Do.ConstantProps['Inner'] = True
+    TruePlanet.Ocean.ConstantProps.rho_kgm3 = true_params['rhoOcean_kgm3']
+    TruePlanet.Ocean.IceConstantProps['Ih'].rho_kgm3 = true_params['rhoIce_kgm3']
+    TruePlanet.Bulk.Cmeasured = 0.3547
     
     TruePlanet, _ = PlanetProfile(TruePlanet, globalParams)
     
@@ -209,6 +214,7 @@ def inversion(inversion_type):
         'core_radius_km': TruePlanet.Core.Rmean_m / 1e3,
         'ocean_mean_density_kgm3': TruePlanet.Ocean.rhoMean_kgm3,
         'mean_conductivity_Sm': TruePlanet.Ocean.sigmaMean_Sm,
+        'hydrosphere_thickness_km': TruePlanet.zb_km + TruePlanet.D_km,
         'MoI': yobs[0],
         'k2': yobs[1],
         'h2': yobs[1],
@@ -231,15 +237,16 @@ def inversion(inversion_type):
         print(f"  Total steps: {samples.shape[0]}")
         print(f"  Burn-in steps: {BURN_IN}")
         print(f"  Production steps: {samples.shape[0] - BURN_IN}")
-    
+    accepted_samples = np.any(samples[1:] != samples[:-1], axis=2)
+    print(f"Number of accepted samples: {accepted_samples.mean(axis=0)}")
     # Combine samples and blobs into single array with variable names
     print("\nCombining samples and blobs into unified array...")
     mcmc_data, var_names = combine_samples_blobs(samples, blobs)
     print(f"  Combined data shape: {mcmc_data.shape}")
     print(f"  Variable names: {var_names}")
     
-
-    
+    print(f"Number of samples with hydrosphere thickness less than 5 km: {len(mcmc_data[mcmc_data[:, :, var_names.index('hydrosphere_thickness_km')] < 5])}")
+    print(f"Number of samples with hydrosphere thickness greater than 5 km: {len(mcmc_data[mcmc_data[:, :, var_names.index('hydrosphere_thickness_km')] > 5])}")
     # Generate plots
     print("\nGenerating diagnostic plots...")
     
@@ -256,12 +263,19 @@ def inversion(inversion_type):
         inversion_type=inversion_type,
     )
 
+    plot_variable_histograms(
+        mcmc_data,
+        var_names=var_names,
+        plot_vars=['hydrosphere_thickness_km', 'ice_thickness_km', 'ocean_thickness_km', 'Pbset_MPa', 'PHydroSeafloorSet_MPa', 'log_fH2', 'rho_sil'],  # Plot all parameters
+        true_values=true_params,
+        inversion_type=inversion_type,
+    )
     # Custom corner plot
     print("\nGenerating custom corner plot...")
     plot_custom_corner(
         mcmc_data,
         var_names=var_names,
-        plot_vars=['ocean_thickness_km', 'ice_thickness_km'],
+        plot_vars=['ice_thickness_km', 'ocean_thickness_km', 'rho_sil', 'rho_core', 'core_radius_km'],
         true_values=true_params,
         inversion_type=inversion_type,
     )

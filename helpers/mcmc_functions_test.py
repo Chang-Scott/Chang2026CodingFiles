@@ -1,5 +1,5 @@
 """
-MCMC Functions
+MCMC Functions Test
 Combined module containing configuration, forward model, and likelihood functions.
 """
 import numpy as np
@@ -20,8 +20,8 @@ loadUserSettings('Inversion')
 # ============================================================================
 
 # Define all variable names in order
-DO_PARALLEL = False
-PARAM_KEYS = ['rho_core', 'rho_sil', 'log_fH2', 'Tb_K', 'PHydroSeafloorSet_MPa']
+DO_PARALLEL = True
+PARAM_KEYS = ['rho_core', 'rho_sil', 'PHydroSeafloorSet_MPa', 'Pbset_MPa', 'rhoOcean_kgm3', 'rhoIce_kgm3']
 DERIVED_KEYS = ['ice_thickness_km', 'ocean_thickness_km', 'core_radius_km',
                 'ocean_mean_density_kgm3', 'mean_conductivity_Sm', 'hydrosphere_thickness_km']
 OBSERVABLE_KEYS = ['MoI', 'k2', 'h2', 'mag_r_orb', 'mag_i_orb', 'mag_r_syn', 'mag_i_syn']
@@ -45,9 +45,10 @@ OBSERVABLE_INDICES = {
 PARAM_BOUNDS = {
     'rho_core': [5150, 8000],
     'rho_sil': [2500, 4500],
-    'log_fH2': [-12.0, -3.0],
-    'Tb_K': [250, 273],
-    'PHydroSeafloorSet_MPa': [0, 400]
+    'PHydroSeafloorSet_MPa': [1, 400],
+    'Pbset_MPa': [1, 150],
+    'rhoOcean_kgm3': [1000, 1300],
+    'rhoIce_kgm3': [900, 1000],
 }
 
 DERIVED_PLOTTING_BOUNDS = {
@@ -61,7 +62,7 @@ DERIVED_PLOTTING_BOUNDS = {
 }
 
 OBSERVABLE_PLOTTING_BOUNDS = {
-    'MoI':  [0.345, 0.350],
+    'MoI':  [0.350, 0.357],
     'k2': [0.25, 0.35],
     'h2': [1.1, 1.3],
     'mag_r_orb': [7.5, 12.5],
@@ -111,10 +112,10 @@ ALL_LABELS = {**PARAM_LABELS, **DERIVED_LABELS, **OBSERVABLE_LABELS}
 
 N_DIM = len(PARAM_KEYS)
 BURN_IN = 100
-N_STEPS = 10000
+N_STEPS = 100000
 # Set number of parallel processes
 N_PROCESSES = globalParams.maxCores
-N_WALKERS = N_PROCESSES * 2
+N_WALKERS = N_PROCESSES * 2 - 2
 
 # Observation uncertainties
 MOI_ERR = 0.001
@@ -125,7 +126,7 @@ MAG_ERR = 1.5
 # Covariance matrix (6x6 for all observables)
 COV = np.diag([MOI_ERR**2, K2_ERR**2, H2_ERR**2, MAG_ERR**2, MAG_ERR**2, MAG_ERR**2, MAG_ERR**2])
 
-MOVES = [(emcee.moves.StretchMove(a = 5.0), 0.7), (emcee.moves.DEMove(), 0.3)]
+MOVES = [(emcee.moves.StretchMove(a = 2), 0.7), (emcee.moves.DEMove(), 0.3)]
 # ============================================================================
 # FORWARD MODEL
 # ============================================================================
@@ -158,27 +159,30 @@ def run_planetprofile(theta, planet_template, global_params, inversion_type):
     planetRun = copy.deepcopy(planet_template)
     
     # Unpack parameters
-    rho_core, rho_sil, log_fH2, Tb_K, PHydroSeafloorSet_MPa = theta
+    rho_core, rho_sil, PHydroSeafloorSet_MPa, Pbset_MPa, rhoOcean_kgm3, rhoIce_kgm3 = theta
     
     # Set parameters
     planetRun.Core.rhoFe_kgm3 = rho_core
     planetRun.Do.ICEIh_THICKNESS = False
     planetRun.Sil.rhoSilWithCore_kgm3 = rho_sil
-    planetRun.Bulk.Tb_K = Tb_K
     planetRun.Do.SPECIFY_HYDROSPHERE_SEAFLOOR_PRESSURE = True
     planetRun.Ocean.PHydroSeafloorSet_MPa = PHydroSeafloorSet_MPa
-    
-    # Round redox state to nearest 0.05 to reduce computat
-    log_fH2 = round(log_fH2 / 0.05) * 0.05
-    planetRun.Ocean.comp = Replicate_Zolotov_H2([log_fH2])[0]
+    planetRun.Bulk.PbSet_MPa = Pbset_MPa
+    planetRun.Do.ConstantProps['Ocean'] = True
+    planetRun.Do.ConstantProps['Ice'] = True
+    planetRun.Do.ConstantProps['Inner'] = True
+    planetRun.Ocean.ConstantProps.rho_kgm3 = rhoOcean_kgm3
+    planetRun.Ocean.IceConstantProps['Ih'].rho_kgm3 = rhoIce_kgm3
+    planetRun.Ocean.comp = 'PureH2O'
+    globalParams.CALC_NEW_GRAVITY = True
+    globalParams.CALC_NEW_MAGNETIC = True
+    planetRun.Do.NO_ICE_CONVECTION = True
     
     # Run forward model
     time_start = time.time()
     planetRun, _ = PlanetProfile(planetRun, global_params)
     time_end = time.time()
     print(f"Time taken for PlanetProfile: {time_end - time_start} seconds")
-    if log_fH2 < -8 and log_fH2 > -5:
-        print(planetRun.Do.VALID)
     if not planetRun.Do.VALID:
         # Return NaN arrays (size based on inversion type)
         n_obs = len(OBSERVABLE_INDICES[inversion_type])
@@ -222,6 +226,7 @@ def run_planetprofile(theta, planet_template, global_params, inversion_type):
         planetRun.Core.Rmean_m / 1e3,
         planetRun.Ocean.rhoMean_kgm3,
         planetRun.Ocean.sigmaMean_Sm,
+        planetRun.zb_km + planetRun.D_km,
         # Observables (saved again for easy access in plotting)
         planetRun.CMR2mean,
         planetRun.Gravity.kAmp,
@@ -262,13 +267,6 @@ def combine_samples_blobs(samples, blobs):
         List of variable names corresponding to columns in combined array
     """
     combined = np.concatenate([samples, blobs], axis=2)
-    # Calculate hydrosphere thickness
-    ice_thickness_index = ALL_KEYS.index('ice_thickness_km')
-    ocean_thickness_index = ALL_KEYS.index('ocean_thickness_km')
-    hydrosphere_thickness = combined[:, :, ice_thickness_index] + combined[:, :, ocean_thickness_index]
-    # Insert hydrosphere thickness at the appropriate index
-    hydrosphere_index = ALL_KEYS.index('hydrosphere_thickness_km')
-    combined = np.insert(combined, hydrosphere_index, hydrosphere_thickness, axis=2)
     var_names = ALL_KEYS
     return combined, var_names
 

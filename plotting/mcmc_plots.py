@@ -8,7 +8,7 @@ from matplotlib.colors import LogNorm
 from scipy.stats import gaussian_kde, uniform
 import corner
 # Import configuration
-from helpers.mcmc_functions import (
+from helpers.mcmc_functions_test import (
     PARAM_KEYS, BLOB_KEYS, ALL_KEYS,
     PARAM_BOUNDS, DERIVED_PLOTTING_BOUNDS, OBSERVABLE_PLOTTING_BOUNDS, ALL_BOUNDS,
     PARAM_LABELS, DERIVED_LABELS, OBSERVABLE_LABELS, ALL_LABELS,
@@ -598,8 +598,9 @@ def plot_variable_histograms(mcmc_data, var_names, plot_vars=None, inversion_typ
     for idx in range(n_vars, len(axes)):
         axes[idx].axis('off')
     
+    figAppend = '_'.join(plot_vars)
     plt.tight_layout()
     os.makedirs('mcmc_figures', exist_ok=True)
-    plt.savefig(f'mcmc_figures/variable_histograms_{inversion_type}.png', dpi=300, bbox_inches='tight', facecolor='white')
+    plt.savefig(f'mcmc_figures/variable_histograms_{inversion_type}_{figAppend}.png', dpi=300, bbox_inches='tight', facecolor='white')
     plt.close()
-    print(f"Saved variable_histograms_{inversion_type}.png")
+    print(f"Saved variable_histograms_{inversion_type}_{figAppend}.png")

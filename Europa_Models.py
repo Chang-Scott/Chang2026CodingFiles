@@ -341,7 +341,8 @@ def calculate_methanogenesis_affinities():
     loadUserSettings('AffinityCalculations')
 
     # Range of excess H2 concentrations to explore (molal), from low-serpentization to high-plume end
-    deltaT_ranges_K = np.logspace(0, 3, 4)
+    # deltaT values correspond to Earth analogs (Kelvin above equilibrium)
+    deltaT_ranges_K = np.array([0.2, 100, 300])
     H2Flux_mols_yr = 10**8  # Vance et. al, 2016
     serpentizationHeat_J_yr = 0.01 * 4 * np.pi * (1451 * 1000)**2 * 60 * 60 * 24 * 365
     H2_concentrations_range_molal = H2Flux_mols_yr * 4184 * deltaT_ranges_K / serpentizationHeat_J_yr
@@ -360,25 +361,21 @@ def calculate_methanogenesis_affinities():
         oceanComp = Replicate_Zolotov_H2([logfH2RedoxState])[0]
         planetRun = copy.deepcopy(Planet)
         planetRun.Ocean.comp = oceanComp
-        planetRun.Ocean.reactionEquation = "CO2(aq) + 4 H2(aq) = Methane(aq) + 2 H2O(aq)"
+        #planetRun.Ocean.reactionEquation = "CO2(aq) + 4 H2(aq) = Methane(aq) + 2 H2O(aq)"
         planetRun, _ = PlanetProfile(planetRun, globalParams)
 
-        equilibrium_constants_seafloor = planetRun.Ocean.equilibriumReactionConstant[-1]
-        equilibrium_constants_seafloor_array[i] = equilibrium_constants_seafloor
+        #equilibrium_constants_seafloor = planetRun.Ocean.equilibriumReactionConstant[-1]
+        #equilibrium_constants_seafloor_array[i] = equilibrium_constants_seafloor
 
         Pseafloor_MPa = planetRun.P_MPa[planetRun.Steps.nHydro - 1]
         Tseafloor_K = planetRun.T_K[planetRun.Steps.nHydro - 1]
 
         H2index = np.where(np.array(planetRun.Ocean.aqueousSpecies) == 'H2(aq)')[0][0]
         H2_equilibrium_molal_seafloor = planetRun.Ocean.aqueousSpeciesAmount_mol[H2index, -1]
-        CO2index = np.where(np.array(planetRun.Ocean.aqueousSpecies) == 'CO2(aq)')[0][0]
-        CO2_equilibrium_molal_seafloor = planetRun.Ocean.aqueousSpeciesAmount_mol[CO2index, -1]
-        CH4index = np.where(np.array(planetRun.Ocean.aqueousSpecies) == 'Methane(aq)')[0][0]
-        CH4_equilibrium_molal_seafloor = planetRun.Ocean.aqueousSpeciesAmount_mol[CH4index, -1]
-
-        # Equilibrium CH4/CO2 ratio from PlanetProfile
-        CH4_CO2_eq_ratio = CH4_equilibrium_molal_seafloor / CO2_equilibrium_molal_seafloor
-        print(f'CH4/CO2 (eq) = {CH4_CO2_eq_ratio:.4e} for redox state {logfH2RedoxState}')
+        #CO2index = np.where(np.array(planetRun.Ocean.aqueousSpecies) == 'CO2(aq)')[0][0]
+        #CO2_equilibrium_molal_seafloor = planetRun.Ocean.aqueousSpeciesAmount_mol[CO2index, -1]
+        #CH4index = np.where(np.array(planetRun.Ocean.aqueousSpecies) == 'Methane(aq)')[0][0]
+        #CH4_equilibrium_molal_seafloor = planetRun.Ocean.aqueousSpeciesAmount_mol[CH4index, -1]
 
         disequilibriumConcentrations_molal = {'H2O(aq)': 55.51, 'H2(aq)': 0, 'H+': 0, 'OH-': 0, 'CO2(aq)': 0, 'Methane(aq)': 0}
         db, system, state, conditions, solver, props = SupcrtGenerator(
@@ -391,34 +388,39 @@ def calculate_methanogenesis_affinities():
             H2_disequilibrium_molal = H2_conc + H2_equilibrium_molal_seafloor
             state.setSpeciesAmount('H2(aq)', H2_disequilibrium_molal, "mol")
             props.update(state)
-            Q = (CH4_CO2_eq_ratio
-                 * float(props.speciesActivity('H2O(aq)'))**2
-                 / float(props.speciesActivity('H2(aq)'))**4)
             affinities_seafloor_kJ[i, k] = (
-                2.3026 * 8.314 * Tseafloor_K
-                * (np.log10(equilibrium_constants_seafloor) - np.log10(Q))
-                / 1000)
+                8.314 * Tseafloor_K
+                * np.log(H2_disequilibrium_molal ** 4/ H2_equilibrium_molal_seafloor ** 4) / 1000)
 
-    # --- Plot: one line per H2 concentration vs. redox state ---
+    # --- Plot: one line per deltaT value vs. redox state ---
     from matplotlib.ticker import FuncFormatter
-    import matplotlib.cm as cm
-    import matplotlib.colors as mcolors
 
-    deltaT_min = deltaT_ranges_K[0]
-    deltaT_max = deltaT_ranges_K[-1]
-    cmap = cm.get_cmap('viridis')
-    norm_deltaT = mcolors.Normalize(vmin=deltaT_min, vmax=deltaT_max)
+    line_colors = ['#1f77b4', '#ff7f0e', '#2ca02c']   # blue, orange, green
+    line_styles = ['-', '--', ':']
 
-    # Wider figure; leave explicit room on the right for the twin axis + colorbar
-    fig, ax = plt.subplots(figsize=(13, 8))
-    fig.subplots_adjust(left=0.08, right=0.68, top=0.90, bottom=0.10)
+    # Wider figure; leave explicit room on the right for the twin axis
+    fig, ax = plt.subplots(figsize=(11, 7))
+    fig.subplots_adjust(left=0.09, right=0.72, top=0.90, bottom=0.10)
 
     logfH2_smooth = np.linspace(logfH2RedoxStateRanges[0], logfH2RedoxStateRanges[-1], 300)
+    label_x_frac = 0.25  # fraction along smooth x-range where labels are placed
+    label_x_idx = int(label_x_frac * len(logfH2_smooth))
     for k, deltaT_K in enumerate(deltaT_ranges_K):
-        color = cmap(norm_deltaT(deltaT_K))
+        color = line_colors[k % len(line_colors)]
+        ls = line_styles[k % len(line_styles)]
         spl = make_interp_spline(logfH2RedoxStateRanges, affinities_seafloor_kJ[:, k], k=3)
         affinity_smooth = spl(logfH2_smooth)
-        ax.plot(logfH2_smooth, affinity_smooth, linewidth=2, color=color)
+        label_str = (rf'$\Delta T = {deltaT_K:g}$ K'
+                     if deltaT_K >= 1 else rf'$\Delta T = {deltaT_K}$ K')
+        ax.plot(logfH2_smooth, affinity_smooth, linewidth=2, color=color,
+                linestyle=ls, label=label_str)
+        # Annotate directly on the line
+        lx = logfH2_smooth[label_x_idx]
+        ly = affinity_smooth[label_x_idx]
+        ax.annotate(label_str, xy=(lx, ly),
+                    xytext=(4, 4), textcoords='offset points',
+                    fontsize=10, color=color,
+                    bbox=dict(boxstyle='round,pad=0.15', fc='white', ec='none', alpha=0.7))
 
     # Equilibrium reference line
     ax.axhline(y=0, color='black', linestyle='solid', linewidth=2, label='Equilibrium')
@@ -430,7 +432,6 @@ def calculate_methanogenesis_affinities():
     ax.set_xlabel(FigLbl.axisLabelsExplore['oceanComp'], fontsize=12)
     ax.set_ylabel(r'Methanogenesis Affinity (kJ (mol of reaction)$^{-1}$)', fontsize=12)
     ax.set_title('Methanogenesis Affinity at the Seafloor')
-    ax.legend(loc='best', fontsize=10, framealpha=0.9)
     ax.grid(True, alpha=0.3, linestyle='--')
 
     # Second y-axis: biomass supported (twin of ax, shares the same plot area)
@@ -449,13 +450,6 @@ def calculate_methanogenesis_affinities():
         return rf"${mantissa:.1f}\times10^{{{exponent}}}$"
 
     ax2_biomass.yaxis.set_major_formatter(FuncFormatter(abs_sci_formatter))
-
-    # Colorbar in its own explicitly-positioned axes, to the right of both ax and ax2_biomass
-    sm = cm.ScalarMappable(cmap=cmap, norm=norm_deltaT)
-    sm.set_array([])
-    cax = fig.add_axes([0.87, 0.10, 0.025, 0.80])  # [left, bottom, width, height] in figure coords
-    cbar = fig.colorbar(sm, cax=cax)
-    cbar.set_label(r'$\Delta T$ (K)', fontsize=12)
 
     output_dir = globalParams.FigureFiles.figPath if hasattr(globalParams.FigureFiles, 'figPath') else '.'
     fig_path = os.path.join(output_dir, 'methanogenesis_affinity.png')
