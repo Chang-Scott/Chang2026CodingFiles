@@ -21,7 +21,7 @@ loadUserSettings('Inversion')
 
 # Define all variable names in order
 DO_PARALLEL = True
-PARAM_KEYS = ['rho_core', 'rho_sil', 'PHydroSeafloorSet_MPa', 'Pbset_MPa', 'rhoOcean_kgm3', 'rhoIce_kgm3']
+PARAM_KEYS = ['rho_core', 'rho_sil', 'ice_thickness_km', 'ocean_thickness_km', 'rhoOcean_kgm3']
 DERIVED_KEYS = ['ice_thickness_km', 'ocean_thickness_km', 'core_radius_km',
                 'ocean_mean_density_kgm3', 'mean_conductivity_Sm', 'hydrosphere_thickness_km']
 OBSERVABLE_KEYS = ['MoI', 'k2', 'h2', 'mag_r_orb', 'mag_i_orb', 'mag_r_syn', 'mag_i_syn']
@@ -45,10 +45,9 @@ OBSERVABLE_INDICES = {
 PARAM_BOUNDS = {
     'rho_core': [5150, 8000],
     'rho_sil': [2500, 4500],
-    'PHydroSeafloorSet_MPa': [1, 400],
-    'Pbset_MPa': [1, 150],
-    'rhoOcean_kgm3': [1000, 1300],
-    'rhoIce_kgm3': [900, 1000],
+    'ice_thickness_km': [1, 200],
+    'ocean_thickness_km': [1, 200],
+    'rhoOcean_kgm3': [1000, 1300]
 }
 
 DERIVED_PLOTTING_BOUNDS = {
@@ -112,7 +111,7 @@ ALL_LABELS = {**PARAM_LABELS, **DERIVED_LABELS, **OBSERVABLE_LABELS}
 
 N_DIM = len(PARAM_KEYS)
 BURN_IN = 100
-N_STEPS = 100000
+N_STEPS = 10000
 # Set number of parallel processes
 N_PROCESSES = globalParams.maxCores
 N_WALKERS = N_PROCESSES * 2 - 2
@@ -159,23 +158,39 @@ def run_planetprofile(theta, planet_template, global_params, inversion_type):
     planetRun = copy.deepcopy(planet_template)
     
     # Unpack parameters
-    rho_core, rho_sil, PHydroSeafloorSet_MPa, Pbset_MPa, rhoOcean_kgm3, rhoIce_kgm3 = theta
+    rho_core, rho_sil, ice_thickness_km, ocean_thickness_km, rhoOcean_kgm3 = theta
     
-    # Set parameters
+    # Set densities
     planetRun.Core.rhoFe_kgm3 = rho_core
-    planetRun.Do.ICEIh_THICKNESS = False
     planetRun.Sil.rhoSilWithCore_kgm3 = rho_sil
-    planetRun.Do.SPECIFY_HYDROSPHERE_SEAFLOOR_PRESSURE = True
-    planetRun.Ocean.PHydroSeafloorSet_MPa = PHydroSeafloorSet_MPa
-    planetRun.Bulk.PbSet_MPa = Pbset_MPa
-    planetRun.Do.ConstantProps['Ocean'] = True
-    planetRun.Do.ConstantProps['Ice'] = True
     planetRun.Do.ConstantProps['Inner'] = True
+    planetRun.Do.ConstantProps['Ice'] = True
+    planetRun.Do.ConstantProps['Ocean'] = True
+    planetRun.Ocean.IceConstantProps['Ih'].rho_kgm3 = 900
     planetRun.Ocean.ConstantProps.rho_kgm3 = rhoOcean_kgm3
-    planetRun.Ocean.IceConstantProps['Ih'].rho_kgm3 = rhoIce_kgm3
+    
+    # Set ice thickness
+    g_ms2 = 1.315
+    planetRun.Bulk.PbSet_MPa = 900 * g_ms2 * ice_thickness_km * 1e3 / 1e6
+    
+    # set ocean thickness
+    planetRun.Do.SPECIFY_HYDROSPHERE_SEAFLOOR_PRESSURE = True
+    planetRun.Ocean.PHydroSeafloorSet_MPa = rhoOcean_kgm3 * g_ms2 * ocean_thickness_km * 1e3 / 1e6 + planetRun.Bulk.PbSet_MPa
+    
+    # Set other settings
+    planetRun.Do.ICEIh_THICKNESS = False
     planetRun.Ocean.comp = 'PureH2O'
-    globalParams.CALC_NEW_GRAVITY = True
-    globalParams.CALC_NEW_MAGNETIC = True
+    global_params.SKIP_INDUCTION = True
+    global_params.SKIP_GRAVITY = True
+    global_params.CALC_CONDUCT = False
+    global_params.CALC_VISCOSITY = False
+    global_params.CALC_SEISMIC = False
+    global_params.CALC_OCEAN_PROPS = False
+    global_params.CALC_ASYM = False
+    global_params.CALC_NEW_ASYM = False
+    global_params.CALC_NEW_INDUCT = False
+    global_params.CALC_NEW_GRAVITY = False
+    global_params.CALC_NEW_REF = False
     planetRun.Do.NO_ICE_CONVECTION = True
     
     # Run forward model
@@ -231,10 +246,10 @@ def run_planetprofile(theta, planet_template, global_params, inversion_type):
         planetRun.CMR2mean,
         planetRun.Gravity.kAmp,
         planetRun.Gravity.hAmp,
-        np.real(planetRun.Magnetic.Bi1Tot_nT[0]),
-        np.imag(planetRun.Magnetic.Bi1Tot_nT[0]),
-        np.real(planetRun.Magnetic.Bi1Tot_nT[1]),
-        np.imag(planetRun.Magnetic.Bi1Tot_nT[1])
+        np.real(planetRun.Magnetic.Bi1Tot_nT[0]) if not global_params.SKIP_INDUCTION else np.nan,
+        np.imag(planetRun.Magnetic.Bi1Tot_nT[0]) if not global_params.SKIP_INDUCTION else np.nan,
+        np.real(planetRun.Magnetic.Bi1Tot_nT[1]) if not global_params.SKIP_INDUCTION else np.nan,
+        np.imag(planetRun.Magnetic.Bi1Tot_nT[1]) if not global_params.SKIP_INDUCTION else np.nan,
     ])
     
     return filtered_observables, blobs
