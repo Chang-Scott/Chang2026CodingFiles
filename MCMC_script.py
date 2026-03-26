@@ -91,7 +91,7 @@ def run_mcmc(yobs, n_walkers, n_steps, burn_in, inversion_type):
     """
     # Filter observables and covariance based on inversion type
     indices = OBSERVABLE_INDICES[inversion_type]
-    yobs_filtered = yobs[indices]
+    yobs_filtered = yobs[indices]sdfadsf
     cov_filtered = COV[np.ix_(indices, indices)]
     
     print("="*60)
