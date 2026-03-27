@@ -91,7 +91,7 @@ def run_mcmc(yobs, n_walkers, n_steps, burn_in, inversion_type):
     """
     # Filter observables and covariance based on inversion type
     indices = OBSERVABLE_INDICES[inversion_type]
-    yobs_filtered = yobs[indices]sdfadsf
+    yobs_filtered = yobs[indices]
     cov_filtered = COV[np.ix_(indices, indices)]
     
     print("="*60)
@@ -189,6 +189,7 @@ def inversion(inversion_type):
     TruePlanet.Ocean.ConstantProps.rho_kgm3 = true_params['rhoOcean_kgm3']
     TruePlanet.Ocean.IceConstantProps['Ih'].rho_kgm3 = true_params['rhoIce_kgm3']
     TruePlanet.Bulk.Cmeasured = 0.3547
+    TruePlanet.Do.SPECIFY_CORE_DENSITY_AND_RADIUS = False
     
     TruePlanet, _ = PlanetProfile(TruePlanet, globalParams)
     
@@ -225,7 +226,7 @@ def inversion(inversion_type):
     })
     
     # Run or load MCMC
-    calc_new = True
+    calc_new = False
     
     if calc_new:
         samples, blobs, log_prob = run_mcmc(yobs, N_WALKERS, N_STEPS, BURN_IN, inversion_type)
@@ -245,8 +246,9 @@ def inversion(inversion_type):
     print(f"  Combined data shape: {mcmc_data.shape}")
     print(f"  Variable names: {var_names}")
     
-    print(f"Number of samples with hydrosphere thickness less than 5 km: {len(mcmc_data[mcmc_data[:, :, var_names.index('hydrosphere_thickness_km')] < 5])}")
-    print(f"Number of samples with hydrosphere thickness greater than 5 km: {len(mcmc_data[mcmc_data[:, :, var_names.index('hydrosphere_thickness_km')] > 5])}")
+    print(f"Number of samples with hydrosphere thickness less than 50 km: {len(mcmc_data[mcmc_data[:, :, var_names.index('hydrosphere_thickness_km')] < 50])}")
+    #print(f"Number of samples with hydrosphere thickness greater than 5 km: {len(mcmc_data[mcmc_data[:, :, var_names.index('hydrosphere_thickness_km')] > 5])}")
+    #mcmc_data = mcmc_data[mcmc_data[:, :, var_names.index('hydrosphere_thickness_km')] < 50]
     # Generate plots
     print("\nGenerating diagnostic plots...")
     
@@ -275,14 +277,14 @@ def inversion(inversion_type):
     plot_custom_corner(
         mcmc_data,
         var_names=var_names,
-        plot_vars=['ice_thickness_km', 'ocean_thickness_km', 'rho_sil', 'rho_core', 'core_radius_km'],
+        plot_vars=['ocean_thickness_km', 'ice_thickness_km'],
         true_values=true_params,
         inversion_type=inversion_type,
     )
     plot_custom_corner(
         mcmc_data,
         var_names=var_names,
-        plot_vars=['log_fH2', 'ice_thickness_km'],
+        plot_vars=['ice_thickness_km', 'ocean_thickness_km', 'rho_sil', 'rho_core', 'core_radius_km'],
         true_values=true_params,
         inversion_type=inversion_type,
     )

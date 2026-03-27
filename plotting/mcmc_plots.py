@@ -216,7 +216,27 @@ def plot_custom_corner(mcmc_data, var_names, plot_vars=None, burn_in=BURN_IN, tr
     data = data[valid_mask]
     
     n_vars = len(plot_vars)
-    
+
+    # --- First pass: compute all 2D histograms to determine a global vmax ---
+    def _get_bins(var, gs):
+        if var in ALL_BOUNDS:
+            return np.linspace(ALL_BOUNDS[var][0], ALL_BOUNDS[var][1], gs)
+        return gs
+
+    global_vmax = 1  # fallback minimum
+    for i in range(1, n_vars):
+        for j in range(i):
+            x_bins = _get_bins(plot_vars[j], gridsize)
+            y_bins = _get_bins(plot_vars[i], gridsize)
+            counts, _, _ = np.histogram2d(data[:, j], data[:, i],
+                                          bins=[x_bins, y_bins])
+            pos_counts = counts[counts > 0]
+            if pos_counts.size > 0:
+                global_vmax = max(global_vmax, pos_counts.max())
+
+    # Single shared norm used by every subplot AND the colorbar
+    shared_norm = LogNorm(vmin=1, vmax=global_vmax)
+
     # Create figure with white background
     fig = plt.figure(figsize=(3 * n_vars, 3 * n_vars), facecolor='white')
     
@@ -231,34 +251,31 @@ def plot_custom_corner(mcmc_data, var_names, plot_vars=None, burn_in=BURN_IN, tr
             row_axes.append(ax)
         axes.append(row_axes)
     
-    # Plot hexbins
-    for i in range(1, n_vars):  # Start from 1 (skip first variable on y-axis)
-        for j in range(i):  # j < i (lower triangular)
+    # Plot 2D histograms
+    for i in range(1, n_vars):
+        for j in range(i):
             ax = axes[i - 1][j]
             
-            x_data = data[:, j]
-            y_data = data[:, i]
-            
-            # Create hexbin
-            hb = ax.hist2d(x_data, y_data, bins=gridsize, norm=LogNorm(), cmap=cmap)
-            # Overlay true values if provided
-            if true_values:
-                x_var = plot_vars[j]
-                y_var = plot_vars[i]
-                
-                if x_var in true_values and y_var in true_values:
-                    true_x = true_values[x_var]
-                    true_y = true_values[y_var]
-                    
-                    ax.scatter(true_x, true_y, marker='*', s=200, c='red',
-                              edgecolors='white', linewidths=1, zorder=10)
-                    ax.axvline(true_x, color='red', linestyle='--', alpha=0.5, linewidth=0.8)
-                    ax.axhline(true_y, color='red', linestyle='--', alpha=0.5, linewidth=0.8)
-            
-            # Set bounds if available
             x_var = plot_vars[j]
             y_var = plot_vars[i]
+            x_bins = _get_bins(x_var, gridsize)
+            y_bins = _get_bins(y_var, gridsize)
+
+            ax.hist2d(data[:, j], data[:, i],
+                      bins=[x_bins, y_bins],
+                      norm=shared_norm,
+                      cmap=cmap)
+
+            # Overlay true values if provided
+            if true_values and x_var in true_values and y_var in true_values:
+                true_x = true_values[x_var]
+                true_y = true_values[y_var]
+                ax.scatter(true_x, true_y, marker='*', s=200, c='red',
+                           edgecolors='white', linewidths=1, zorder=10)
+                ax.axvline(true_x, color='red', linestyle='--', alpha=0.5, linewidth=0.8)
+                ax.axhline(true_y, color='red', linestyle='--', alpha=0.5, linewidth=0.8)
             
+            # Set bounds if available
             if x_var in ALL_BOUNDS:
                 ax.set_xlim(ALL_BOUNDS[x_var])
             if y_var in ALL_BOUNDS:
@@ -288,12 +305,10 @@ def plot_custom_corner(mcmc_data, var_names, plot_vars=None, burn_in=BURN_IN, tr
                 spine.set_edgecolor('white')
                 spine.set_linewidth(0.5)
     
-    # Add a single shared colorbar
-    cbar_ax = fig.add_axes([0.92, 0.15, 0.02, 0.7])
-    
-    # Create a dummy mappable for the colorbar
+    # Add a single shared colorbar using the same norm as the histograms
     from matplotlib.cm import ScalarMappable
-    sm = ScalarMappable(cmap=cmap, norm=LogNorm(vmin=1, vmax=data.shape[0]/100))
+    cbar_ax = fig.add_axes([0.92, 0.15, 0.02, 0.7])
+    sm = ScalarMappable(cmap=cmap, norm=shared_norm)
     sm.set_array([])
     
     cbar = fig.colorbar(sm, cax=cbar_ax)

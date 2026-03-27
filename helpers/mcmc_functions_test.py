@@ -21,7 +21,11 @@ loadUserSettings('Inversion')
 
 # Define all variable names in order
 DO_PARALLEL = True
-PARAM_KEYS = ['rho_core', 'rho_sil', 'ice_thickness_km', 'ocean_thickness_km', 'rhoOcean_kgm3']
+TEST_MODE = 'CoreDensityAndRadius'
+if TEST_MODE == 'CoreDensityAndRadius':
+    PARAM_KEYS = ['rho_core', 'r_core_m', 'ice_thickness_km', 'ocean_thickness_km', 'rhoOcean_kgm3']
+elif TEST_MODE == 'Densities':
+    PARAM_KEYS = ['rho_core', 'rho_sil', 'ice_thickness_km', 'ocean_thickness_km', 'rhoOcean_kgm3']
 DERIVED_KEYS = ['ice_thickness_km', 'ocean_thickness_km', 'core_radius_km',
                 'ocean_mean_density_kgm3', 'mean_conductivity_Sm', 'hydrosphere_thickness_km']
 OBSERVABLE_KEYS = ['MoI', 'k2', 'h2', 'mag_r_orb', 'mag_i_orb', 'mag_r_syn', 'mag_i_syn']
@@ -37,23 +41,20 @@ OBSERVABLE_INDICES = {
     'Joint': [0, 1, 2, 3, 4, 5, 6]  # MoI, tides, mag_r_orb, mag_i_orb, mag_r_syn, mag_i_syn
 }
 
-
 # ============================================================================
 # CONFIGURATION - PARAMETER BOUNDS
 # ============================================================================
-
 PARAM_BOUNDS = {
     'rho_core': [5150, 8000],
     'rho_sil': [2500, 4500],
     'ice_thickness_km': [1, 200],
     'ocean_thickness_km': [1, 200],
-    'rhoOcean_kgm3': [1000, 1300]
+    'rhoOcean_kgm3': [1000, 1300],
+    'r_core_m': [1, 1000*1e3]
 }
 
 DERIVED_PLOTTING_BOUNDS = {
-    'ice_thickness_km': [0, 140],
-    'ocean_thickness_km': [0, 150],
-    'hydrosphere_thickness_km': [0, 300],
+    'hydrosphere_thickness_km': [1, 300],
     'core_radius_km': [200, 600],
     'ocean_mean_density_kgm3': [1000, 1300],
     'mean_conductivity_Sm': [0, 5],
@@ -110,7 +111,7 @@ ALL_LABELS = {**PARAM_LABELS, **DERIVED_LABELS, **OBSERVABLE_LABELS}
 # ============================================================================
 
 N_DIM = len(PARAM_KEYS)
-BURN_IN = 100
+BURN_IN = 1000
 N_STEPS = 10000
 # Set number of parallel processes
 N_PROCESSES = globalParams.maxCores
@@ -156,19 +157,31 @@ def run_planetprofile(theta, planet_template, global_params, inversion_type):
          k2, h2, mag_r_orb, mag_i_orb, mag_r_syn, mag_i_syn)
     """
     planetRun = copy.deepcopy(planet_template)
-    
     # Unpack parameters
-    rho_core, rho_sil, ice_thickness_km, ocean_thickness_km, rhoOcean_kgm3 = theta
-    
-    # Set densities
-    planetRun.Core.rhoFe_kgm3 = rho_core
-    planetRun.Sil.rhoSilWithCore_kgm3 = rho_sil
-    planetRun.Do.ConstantProps['Inner'] = True
-    planetRun.Do.ConstantProps['Ice'] = True
-    planetRun.Do.ConstantProps['Ocean'] = True
-    planetRun.Ocean.IceConstantProps['Ih'].rho_kgm3 = 900
-    planetRun.Ocean.ConstantProps.rho_kgm3 = rhoOcean_kgm3
-    
+    if TEST_MODE == 'CoreDensityAndRadius':
+        rho_core, r_core_m, ice_thickness_km, ocean_thickness_km, rhoOcean_kgm3 = theta
+        # Set core density and radius
+        planetRun.Core.rhoFe_kgm3 = rho_core
+        planetRun.Core.Rset_m = r_core_m
+        planetRun.Do.ConstantProps['Inner'] = True
+        planetRun.Do.ConstantProps['Ice'] = True
+        planetRun.Do.ConstantProps['Ocean'] = True
+        planetRun.Ocean.IceConstantProps['Ih'].rho_kgm3 = 920
+        planetRun.Ocean.ConstantProps.rho_kgm3 = rhoOcean_kgm3
+        planetRun.Do.SPECIFY_CORE_DENSITY_AND_RADIUS = True
+    elif TEST_MODE == 'Densities':
+        
+        rho_core, rho_sil, ice_thickness_km, ocean_thickness_km, rhoOcean_kgm3 = theta
+        # Set densities
+        planetRun.Core.rhoFe_kgm3 = rho_core
+        planetRun.Sil.rhoSilWithCore_kgm3 = rho_sil
+        planetRun.Do.ConstantProps['Inner'] = True
+        planetRun.Do.ConstantProps['Ice'] = True
+        planetRun.Do.ConstantProps['Ocean'] = True
+        planetRun.Ocean.IceConstantProps['Ih'].rho_kgm3 = 920
+        planetRun.Ocean.ConstantProps.rho_kgm3 = rhoOcean_kgm3
+        planetRun.Do.SPECIFY_CORE_DENSITY_AND_RADIUS = False
+        
     # Set ice thickness
     g_ms2 = 1.315
     planetRun.Bulk.PbSet_MPa = 900 * g_ms2 * ice_thickness_km * 1e3 / 1e6
