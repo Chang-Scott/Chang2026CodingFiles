@@ -169,7 +169,7 @@ def inversion(inversion_type):
     true_params = {
         'rho_core': 6180.0,
         'rho_sil': 3630.0,
-        'log_fH2': -5,
+        'log_fH2': -10.2,
         'Tb_K': 270.6
     }
     
@@ -305,6 +305,6 @@ def inversion(inversion_type):
 
 if __name__ == "__main__":
     inversion(inversion_type='Gravity')
-    #inversion(inversion_type='GravityandTides')
-    #inversion(inversion_type='MagneticInduction')
-    #inversion(inversion_type='Joint')
+    inversion(inversion_type='GravityandTides')
+    inversion(inversion_type='MagneticInduction')
+    inversion(inversion_type='Joint')
