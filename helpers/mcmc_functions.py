@@ -177,7 +177,7 @@ def run_planetprofile(theta, planet_template, global_params, inversion_type):
     log_fH2 = round(log_fH2 / 0.05) * 0.05
     planetRun.Ocean.comp = Replicate_Zolotov_H2([log_fH2])[0]
     global_params.CALC_OCEAN_PROPS = False
-    if inversion_type not in ['Gravity','GravityandTides']:
+    if inversion_type in ['Gravity','GravityandTides']:
         global_params.CALC_CONDUCT = False
         global_params.SKIP_INDUCTION = True
     if inversion_type in ['Gravity', 'MagneticInduction']:
@@ -239,10 +239,10 @@ def run_planetprofile(theta, planet_template, global_params, inversion_type):
         planetRun.CMR2mean,
         planetRun.Gravity.kAmp,
         planetRun.Gravity.hAmp,
-        np.real(planetRun.Magnetic.Bi1Tot_nT[0]),
-        np.imag(planetRun.Magnetic.Bi1Tot_nT[0]),
-        np.real(planetRun.Magnetic.Bi1Tot_nT[1]),
-        np.imag(planetRun.Magnetic.Bi1Tot_nT[1])
+        np.real(planetRun.Magnetic.Bi1Tot_nT[0]) if not global_params.SKIP_INDUCTION else np.nan,
+        np.imag(planetRun.Magnetic.Bi1Tot_nT[0]) if not global_params.SKIP_INDUCTION else np.nan,
+        np.real(planetRun.Magnetic.Bi1Tot_nT[1]) if not global_params.SKIP_INDUCTION else np.nan,
+        np.imag(planetRun.Magnetic.Bi1Tot_nT[1]) if not global_params.SKIP_INDUCTION else np.nan
     ])
     
     return filtered_observables, blobs

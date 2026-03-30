@@ -226,7 +226,7 @@ def inversion(inversion_type):
     })
     
     # Run or load MCMC
-    calc_new = True
+    calc_new = False
     
     if calc_new:
         samples, blobs, log_prob = run_mcmc(yobs, N_WALKERS, N_STEPS, BURN_IN, inversion_type)
