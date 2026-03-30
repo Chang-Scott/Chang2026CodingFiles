@@ -6,6 +6,7 @@ import numpy as np
 import copy
 import time
 import os
+from multiprocessing import Pool
 from scipy.interpolate import RectBivariateSpline
 from scipy.stats import norm
 from PlanetProfile.Main import PlanetProfile
@@ -27,7 +28,7 @@ if TEST_MODE == 'CoreDensityAndRadius':
 elif TEST_MODE == 'Densities':
     PARAM_KEYS = ['rho_core', 'rho_sil', 'ice_thickness_km', 'ocean_thickness_km', 'rhoOcean_kgm3']
 DERIVED_KEYS = ['ice_thickness_km', 'ocean_thickness_km', 'core_radius_km',
-                'ocean_mean_density_kgm3', 'mean_conductivity_Sm', 'hydrosphere_thickness_km']
+                'ocean_mean_density_kgm3', 'mean_conductivity_Sm', 'hydrosphere_thickness_km', 'rho_sil']
 OBSERVABLE_KEYS = ['MoI', 'k2', 'h2', 'mag_r_orb', 'mag_i_orb', 'mag_r_syn', 'mag_i_syn']
 
 # Combined blob keys (derived + observables)
@@ -113,9 +114,11 @@ ALL_LABELS = {**PARAM_LABELS, **DERIVED_LABELS, **OBSERVABLE_LABELS}
 N_DIM = len(PARAM_KEYS)
 BURN_IN = 1000
 N_STEPS = 10000
+N_MC_SAMPLES = 10000
 # Set number of parallel processes
 N_PROCESSES = globalParams.maxCores
 N_WALKERS = N_PROCESSES * 2 - 2
+N_PRIOR_SAMPLES = 5000
 
 # Observation uncertainties
 MOI_ERR = 0.001
@@ -126,7 +129,13 @@ MAG_ERR = 1.5
 # Covariance matrix (6x6 for all observables)
 COV = np.diag([MOI_ERR**2, K2_ERR**2, H2_ERR**2, MAG_ERR**2, MAG_ERR**2, MAG_ERR**2, MAG_ERR**2])
 
-MOVES = [(emcee.moves.StretchMove(a = 2), 0.7), (emcee.moves.DEMove(), 0.3)]
+MOVES = [(emcee.moves.StretchMove(a = 4), 0.7), (emcee.moves.DEMove(), 0.3)]
+
+# Prior-only Monte Carlo (same uniform priors as initialize_walkers / log_prior).
+# Independent draws; not tied to MCMC length. Scale up/down as needed.
+PRIOR_N_SAMPLES = min(10000, max(500, N_WALKERS * 100))
+PRIOR_BURN_IN = 0
+
 # ============================================================================
 # FORWARD MODEL
 # ============================================================================
@@ -255,6 +264,7 @@ def run_planetprofile(theta, planet_template, global_params, inversion_type):
         planetRun.Ocean.rhoMean_kgm3,
         planetRun.Ocean.sigmaMean_Sm,
         planetRun.zb_km + planetRun.D_km,
+        planetRun.Sil.rhoSilWithCore_kgm3,
         # Observables (saved again for easy access in plotting)
         planetRun.CMR2mean,
         planetRun.Gravity.kAmp,
@@ -297,6 +307,33 @@ def combine_samples_blobs(samples, blobs):
     combined = np.concatenate([samples, blobs], axis=2)
     var_names = ALL_KEYS
     return combined, var_names
+
+
+def stack_prior_as_mcmc_chains(thetas, blobs_list):
+    """
+    Stack independent prior draws into arrays with the same layout as emcee's
+    get_chain / get_blobs for use with combine_samples_blobs and plotting.
+
+    Parameters
+    ----------
+    thetas : ndarray, shape (n, ndim)
+        Rows are independent uniform prior draws (same as initialize_walkers).
+    blobs_list : sequence of ndarray, length n
+        Each element is shape (nblobs,) from run_planetprofile.
+
+    Returns
+    -------
+    samples : ndarray, shape (n, 1, ndim)
+    blobs : ndarray, shape (n, 1, nblobs)
+    log_prob : ndarray, shape (n, 1)
+        Filled with NaN (no posterior).
+    """
+    thetas = np.asarray(thetas)
+    blobs_arr = np.stack(blobs_list, axis=0)
+    samples = thetas[:, np.newaxis, :]
+    blobs = blobs_arr[:, np.newaxis, :]
+    log_prob = np.full((samples.shape[0], 1), np.nan, dtype=float)
+    return samples, blobs, log_prob
 
 
 # ============================================================================
@@ -369,3 +406,82 @@ def log_probability(theta, yobs, cov, forward_model_fn, inversion_type):
     ll = log_likelihood(observables, yobs, cov)
     
     return lp + ll, blobs
+
+
+# ============================================================================
+# PRIOR SAMPLING
+# ============================================================================
+
+def run_prior_sampling(forward_model_fn, inversion_type, n_samples=N_PRIOR_SAMPLES,
+                       n_processes=None, save_dir='.', do_parallel=DO_PARALLEL):
+    """
+    Draw samples uniformly from prior bounds and evaluate the forward model in parallel.
+
+    Outputs are saved and returned in the same (nsteps, nwalkers, nvars) format as the
+    MCMC chain so that all existing plotting functions can be reused with burn_in=0.
+
+    Parameters
+    ----------
+    forward_model_fn : callable
+        Function with signature (theta, inversion_type) -> (observables, blobs).
+        Use the same forward_model_wrapper defined in the main script.
+    inversion_type : str
+        One of 'Gravity', 'GravityandTides', 'MagneticInduction', 'Joint'.
+    n_samples : int
+        Total number of prior draws to evaluate.
+    n_processes : int or None
+        Number of parallel worker processes. Defaults to N_PROCESSES.
+    save_dir : str
+        Directory in which to save .npy output files.
+    do_parallel : bool
+        Whether to use multiprocessing.
+
+    Returns
+    -------
+    samples_arr : ndarray, shape (n_samples, 1, ndim)
+    blobs_arr   : ndarray, shape (n_samples, 1, nblobs)
+    log_prob_arr: ndarray, shape (n_samples, 1)  -- all zeros (flat prior)
+    """
+    if n_processes is None:
+        n_processes = N_PROCESSES
+
+    print("=" * 60)
+    print("PRIOR SAMPLING WITH PLANETPROFILE")
+    print("=" * 60)
+    print(f"Inversion type  : {inversion_type}")
+    print(f"Number of samples: {n_samples}")
+    print(f"Parallel         : {do_parallel} ({n_processes} processes)")
+    print("=" * 60)
+
+    # Draw uniformly from prior bounds
+    param_bounds_array = np.array([PARAM_BOUNDS[key] for key in PARAM_KEYS])
+    theta_samples = np.random.uniform(
+        low=param_bounds_array[:, 0],
+        high=param_bounds_array[:, 1],
+        size=(n_samples, N_DIM)
+    )
+
+    args_list = [(theta, inversion_type) for theta in theta_samples]
+
+    if do_parallel:
+        with Pool(processes=n_processes) as pool:
+            results = pool.starmap(forward_model_fn, args_list)
+    else:
+        results = [forward_model_fn(theta, inversion_type) for theta, _ in args_list]
+
+    blobs_flat = np.array([r[1] for r in results], dtype=float)  # (n_samples, nblobs)
+
+    # Reshape to (n_samples, 1, *) so existing plot helpers work with burn_in=0
+    samples_arr = theta_samples[:, np.newaxis, :]       # (n_samples, 1, ndim)
+    blobs_arr = blobs_flat[:, np.newaxis, :]             # (n_samples, 1, nblobs)
+    log_prob_arr = np.zeros((n_samples, 1))              # flat prior -> log prob = 0
+
+    # Save outputs
+    os.makedirs(save_dir, exist_ok=True)
+    tag = f'prior_{inversion_type}'
+    np.save(os.path.join(save_dir, f'mcmc_chain_{tag}.npy'), samples_arr)
+    np.save(os.path.join(save_dir, f'mcmc_blobs_{tag}.npy'), blobs_arr)
+    np.save(os.path.join(save_dir, f'mcmc_log_prob_{tag}.npy'), log_prob_arr)
+    print(f"\nSaved: mcmc_chain_{tag}.npy, mcmc_blobs_{tag}.npy, mcmc_log_prob_{tag}.npy")
+
+    return samples_arr, blobs_arr, log_prob_arr

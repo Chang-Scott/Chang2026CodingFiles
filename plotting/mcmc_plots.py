@@ -4,7 +4,7 @@ MCMC Plotting Functions
 import os
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.colors import LogNorm
+from matplotlib.colors import Normalize
 from scipy.stats import gaussian_kde, uniform
 import corner
 # Import configuration
@@ -70,7 +70,7 @@ def plot_2d_corner(mcmc_data, var_names, var1_name, var2_name, burn_in=BURN_IN,
         gridsize=200,
         cmap="magma",
         mincnt=1,
-        norm=LogNorm(),
+        norm=Normalize(),
     )
 
     if true_values and var1_name in true_values and var2_name in true_values:
@@ -171,7 +171,7 @@ def plot_blob_distributions(mcmc_data, var_names, burn_in=BURN_IN,
 
 
 def plot_custom_corner(mcmc_data, var_names, plot_vars=None, burn_in=BURN_IN, true_values=None, 
-                       gridsize=50, cmap="magma", inversion_type=None):
+                       gridsize=50, cmap="magma", inversion_type=None, output_dir='mcmc_figures'):
     """
     Plot custom corner plot with hexbin off-diagonal plots and no diagonal plots.
     
@@ -193,6 +193,8 @@ def plot_custom_corner(mcmc_data, var_names, plot_vars=None, burn_in=BURN_IN, tr
         Colormap name
     inversion_type : str
         Type of inversion ('Gravity', 'MagneticInduction', or 'Joint')
+    output_dir : str
+        Directory for saved figures.
     """
     # Flatten data after burn-in
     flat_data = mcmc_data[burn_in:].reshape(-1, mcmc_data.shape[-1])
@@ -235,7 +237,7 @@ def plot_custom_corner(mcmc_data, var_names, plot_vars=None, burn_in=BURN_IN, tr
                 global_vmax = max(global_vmax, pos_counts.max())
 
     # Single shared norm used by every subplot AND the colorbar
-    shared_norm = LogNorm(vmin=1, vmax=global_vmax)
+    shared_norm = Normalize(vmin=0, vmax=global_vmax)
 
     # Create figure with white background
     fig = plt.figure(figsize=(3 * n_vars, 3 * n_vars), facecolor='white')
@@ -323,8 +325,8 @@ def plot_custom_corner(mcmc_data, var_names, plot_vars=None, burn_in=BURN_IN, tr
     var_str = "_".join(plot_vars)
     # Set figure size to 4x8
     fig.set_size_inches(4, 8)
-    os.makedirs('mcmc_figures', exist_ok=True)
-    plt.savefig(f'mcmc_figures/custom_corner_{inversion_type}_{var_str}.png', dpi=300, bbox_inches='tight', facecolor='white')
+    os.makedirs(output_dir, exist_ok=True)
+    plt.savefig(os.path.join(output_dir, f'custom_corner_{inversion_type}_{var_str}.png'), dpi=300, bbox_inches='tight', facecolor='white')
     plt.close()
     print(f"Saved custom_corner_{inversion_type}_{var_str}.png")
 
@@ -491,7 +493,7 @@ def plot_mcmc_results(samples, log_prob, inversion_type, burn_in=BURN_IN):
 
 
 def plot_variable_histograms(mcmc_data, var_names, plot_vars=None, inversion_type=None, burn_in=BURN_IN, 
-                             true_values=None, bins=50):
+                             true_values=None, bins=50, output_dir='mcmc_figures'):
     """
     Plot histograms of selected variables for diagnostic purposes.
     
@@ -515,6 +517,8 @@ def plot_variable_histograms(mcmc_data, var_names, plot_vars=None, inversion_typ
         Dictionary of true parameter values {var_name: value}
     bins : int or str
         Number of bins for histograms (or 'auto')
+    output_dir : str
+        Directory for saved figures.
     """
     # Flatten data after burn-in
     flat_data = mcmc_data[burn_in:].reshape(-1, mcmc_data.shape[-1])
@@ -615,7 +619,7 @@ def plot_variable_histograms(mcmc_data, var_names, plot_vars=None, inversion_typ
     
     figAppend = '_'.join(plot_vars)
     plt.tight_layout()
-    os.makedirs('mcmc_figures', exist_ok=True)
-    plt.savefig(f'mcmc_figures/variable_histograms_{inversion_type}_{figAppend}.png', dpi=300, bbox_inches='tight', facecolor='white')
+    os.makedirs(output_dir, exist_ok=True)
+    plt.savefig(os.path.join(output_dir, f'variable_histograms_{inversion_type}_{figAppend}.png'), dpi=300, bbox_inches='tight', facecolor='white')
     plt.close()
     print(f"Saved variable_histograms_{inversion_type}_{figAppend}.png")

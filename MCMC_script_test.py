@@ -169,18 +169,27 @@ def inversion(inversion_type):
     true_params = {
         'rho_core': 6180.0,
         'rho_sil': 3630.0,
-        'log_fH2': -5,
-        'Tb_K': 270.6
+        'PHydroSeafloorSet_MPa': 210,
+        'Pbset_MPa': 50,
+        'rhoOcean_kgm3': 1100.0,
+        'rhoIce_kgm3': 1000
     }
     
     TruePlanet = copy.deepcopy(Planet)
     TruePlanet.Do.ICEIh_THICKNESS = False
-    TruePlanet.Do.ConstantProps['Inner'] = True
+    TruePlanet.Ocean.comp = 'PureH2O'
     TruePlanet.Core.rhoFe_kgm3 = true_params['rho_core']
     TruePlanet.Sil.rhoSilWithCore_kgm3 = true_params['rho_sil']
-    TruePlanet.Ocean.comp = Replicate_Zolotov_H2([true_params['log_fH2']])[0]
-    TruePlanet.Bulk.Tb_K = true_params['Tb_K']
+    TruePlanet.Do.SPECIFY_HYDROSPHERE_SEAFLOOR_PRESSURE = True
+    TruePlanet.Ocean.PHydroSeafloorSet_MPa = true_params['PHydroSeafloorSet_MPa']
+    TruePlanet.Bulk.PbSet_MPa = true_params['Pbset_MPa']
+    TruePlanet.Do.ConstantProps['Ocean'] = True
+    TruePlanet.Do.ConstantProps['Ice'] = True
+    TruePlanet.Do.ConstantProps['Inner'] = True
+    TruePlanet.Ocean.ConstantProps.rho_kgm3 = true_params['rhoOcean_kgm3']
+    TruePlanet.Ocean.IceConstantProps['Ih'].rho_kgm3 = true_params['rhoIce_kgm3']
     TruePlanet.Bulk.Cmeasured = 0.3547
+    TruePlanet.Do.SPECIFY_CORE_DENSITY_AND_RADIUS = False
     
     TruePlanet, _ = PlanetProfile(TruePlanet, globalParams)
     
@@ -302,9 +311,57 @@ def inversion(inversion_type):
     print("Check the 'mcmc_figures' directory for plots.")
     print("="*60)
 
+def prior_sampling(inversion_type):
+    """
+    Run prior sampling and generate histograms.
+    Draws N_PRIOR_SAMPLES uniformly from parameter bounds, runs forward models in parallel,
+    and plots posterior-style histograms using the same plotting functions as MCMC.
+    """
+    tag = f'prior_{inversion_type}'
+
+    calc_new = True
+    if calc_new:
+        samples, blobs, log_prob = run_prior_sampling(
+            forward_model_wrapper, inversion_type
+        )
+    else:
+        print(f"\nLoading prior sampling data for {inversion_type}...")
+        samples = np.load(f'mcmc_chain_{tag}.npy')
+        blobs = np.load(f'mcmc_blobs_{tag}.npy')
+        log_prob = np.load(f'mcmc_log_prob_{tag}.npy')
+        print(f"  Total samples: {samples.shape[0]}")
+
+    # Combine into unified array (burn_in=0 since there is no burn-in phase)
+    mcmc_data, var_names = combine_samples_blobs(samples, blobs)
+
+    print(f"\nGenerating prior-sampling histograms for {inversion_type}...")
+    plot_variable_histograms(
+        mcmc_data,
+        var_names=var_names,
+        plot_vars=['MoI', 'ice_thickness_km', 'ocean_thickness_km', 'rho_sil'],
+        inversion_type=tag,
+        burn_in=0,
+    )
+    plot_variable_histograms(
+        mcmc_data,
+        var_names=var_names,
+        plot_vars=['MoI', 'k2', 'h2', 'mag_r_orb', 'mag_i_orb', 'mag_r_syn', 'mag_i_syn'],
+        inversion_type=tag,
+        burn_in=0,
+    )
+    plot_custom_corner(
+        mcmc_data,
+        var_names=var_names,
+        plot_vars=['ice_thickness_km', 'ocean_thickness_km', 'rho_sil', 'rho_core', 'core_radius_km'],
+        inversion_type=tag,
+        burn_in=0,
+    )
+    print(f"\nPrior sampling complete for {inversion_type}.")
+
 
 if __name__ == "__main__":
-    inversion(inversion_type='Gravity')
+    prior_sampling(inversion_type='Gravity')
+    #inversion(inversion_type='Gravity')
     #inversion(inversion_type='GravityandTides')
     #inversion(inversion_type='MagneticInduction')
     #inversion(inversion_type='Joint')
