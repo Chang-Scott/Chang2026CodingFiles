@@ -403,12 +403,13 @@ def calculate_methanogenesis_affinities():
     fig.subplots_adjust(left=0.09, right=0.72, top=0.90, bottom=0.10)
 
     logfH2_smooth = np.linspace(logfH2RedoxStateRanges[0], logfH2RedoxStateRanges[-1], 300)
-    label_x_frac = 0.25  # fraction along smooth x-range where labels are placed
-    label_x_idx = int(label_x_frac * len(logfH2_smooth))
+    label_x_fracs = [0.25, 0.45, 0.65]
     for k, deltaT_K in enumerate(deltaT_ranges_K):
+        label_x_frac = label_x_fracs[k] # fraction along smooth x-range where labels are placed
+        label_x_idx = int(label_x_frac * len(logfH2_smooth))
         color = line_colors[k % len(line_colors)]
         ls = line_styles[k % len(line_styles)]
-        spl = make_interp_spline(logfH2RedoxStateRanges, affinities_seafloor_kJ[:, k], k=3)
+        spl = make_interp_spline(logfH2RedoxStateRanges, affinities_seafloor_kJ[:, k], k=2)
         affinity_smooth = spl(logfH2_smooth)
         label_str = (rf'$\Delta T = {deltaT_K:g}$ K'
                      if deltaT_K >= 1 else rf'$\Delta T = {deltaT_K}$ K')
@@ -419,22 +420,23 @@ def calculate_methanogenesis_affinities():
         ly = affinity_smooth[label_x_idx]
         ax.annotate(label_str, xy=(lx, ly),
                     xytext=(4, 4), textcoords='offset points',
-                    fontsize=10, color=color,
+                    fontsize=30, color=color,
                     bbox=dict(boxstyle='round,pad=0.15', fc='white', ec='none', alpha=0.7))
 
     # Equilibrium reference line
     ax.axhline(y=0, color='black', linestyle='solid', linewidth=2, label='Equilibrium')
 
     ax.set_xlim([-12, -3])
-    ax.set_ylim([0, 250])
+    ax.set_ylim([0, 276])
     ax.set_xticks(np.arange(-12, -3 + 1, 1))
-    ax.set_yticks(np.arange(0, 251, 25))
-    ax.set_xlabel(FigLbl.axisLabelsExplore['oceanComp'], fontsize=12)
-    ax.set_ylabel(r'Methanogenesis Affinity (kJ (mol of reaction)$^{-1}$)', fontsize=12)
-    ax.set_title('Methanogenesis Affinity at the Seafloor')
+    ax.set_yticks(np.arange(0, 276, 25))
+    ax.tick_params(axis='both', labelsize=16)  # Set font size of ticks
+    #ax.set_xlabel(FigLbl.axisLabelsExplore['oceanComp'], fontsize=12)
+    #ax.set_ylabel(r'Methanogenesis Affinity (kJ (mol of reaction)$^{-1}$)', fontsize=12)
+    #ax.set_title('Methanogenesis Affinity at the Seafloor')
     ax.grid(True, alpha=0.3, linestyle='--')
 
-    # Second y-axis: biomass supported (twin of ax, shares the same plot area)
+    """# Second y-axis: biomass supported (twin of ax, shares the same plot area)
     ax2_biomass = ax.twinx()
     biomass_conversion = (H2Flux_mols_yr / 4) * (1 / 4.184) * 0.1 * (1 / 10) * (1 / 0.02)  # Jaksoyev and Shock, 2010
     y1_min, y1_max = ax.get_ylim()
@@ -449,7 +451,7 @@ def calculate_methanogenesis_affinities():
         mantissa = x / 10**exponent
         return rf"${mantissa:.1f}\times10^{{{exponent}}}$"
 
-    ax2_biomass.yaxis.set_major_formatter(FuncFormatter(abs_sci_formatter))
+    ax2_biomass.yaxis.set_major_formatter(FuncFormatter(abs_sci_formatter))"""
 
     output_dir = globalParams.FigureFiles.figPath if hasattr(globalParams.FigureFiles, 'figPath') else '.'
     fig_path = os.path.join(output_dir, 'methanogenesis_affinity.png')

@@ -110,8 +110,8 @@ ALL_LABELS = {**PARAM_LABELS, **DERIVED_LABELS, **OBSERVABLE_LABELS}
 # ============================================================================
 
 N_DIM = len(PARAM_KEYS)
-BURN_IN = 100
-N_STEPS = 1000
+BURN_IN = 1000
+N_STEPS = 10000
 # Set number of parallel processes
 N_PROCESSES = globalParams.maxCores
 N_WALKERS = N_PROCESSES * 2 -  2

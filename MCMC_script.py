@@ -170,7 +170,7 @@ def inversion(inversion_type):
         'rho_core': 6180.0,
         'rho_sil': 3630.0,
         'log_fH2': -10.2,
-        'Tb_K': 270.6
+        'Tb_K': 266.2
     }
     
     TruePlanet = copy.deepcopy(Planet)
@@ -218,7 +218,7 @@ def inversion(inversion_type):
     
     # Run or load MCMC
     calc_new = True
-    
+
     if calc_new:
         samples, blobs, log_prob = run_mcmc(yobs, N_WALKERS, N_STEPS, BURN_IN, inversion_type)
     else:
@@ -242,7 +242,7 @@ def inversion(inversion_type):
     #mcmc_data = mcmc_data[mcmc_data[:, :, var_names.index('hydrosphere_thickness_km')] < 50]
     # Generate plots
     print("\nGenerating diagnostic plots...")
-    
+    """
     # Trace plots and corner plot
     plot_mcmc_results(samples, log_prob, inversion_type)
     
@@ -296,7 +296,14 @@ def inversion(inversion_type):
         true_values=true_params,
         inversion_type=inversion_type,
             )
-    
+    """
+    plot_posterior_vs_prior(
+        mcmc_data,
+        var_names=var_names,
+        var_name='log_fH2',
+        true_values=true_params,
+        inversion_type=inversion_type,
+    )
     print("\n" + "="*60)
     print("MCMC RUN COMPLETE!")
     print("Check the 'mcmc_figures' directory for plots.")

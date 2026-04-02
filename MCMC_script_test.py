@@ -18,7 +18,7 @@ from PlanetProfile.Main import LoadPPfiles, PlanetProfile
 # Import local modules
 from Replicate_Zolotov_2008_Elemental import Replicate_Zolotov_H2, SetSettings
 SetSettings(save_to_txt_file=False, output_figures=False, mat_output_dir='./', txt_output_dir='./', figure_output_dir='./')
-from helpers.mcmc_functions import *
+from helpers.mcmc_functions_test import *
 
 from helpers.pp_common import loadUserSettings, CopyCarefully
 from plotting.mcmc_plots import (
@@ -360,8 +360,8 @@ def prior_sampling(inversion_type):
 
 
 if __name__ == "__main__":
-    prior_sampling(inversion_type='Gravity')
+    #prior_sampling(inversion_type='Gravity')
     #inversion(inversion_type='Gravity')
     #inversion(inversion_type='GravityandTides')
     #inversion(inversion_type='MagneticInduction')
-    #inversion(inversion_type='Joint')
+    inversion(inversion_type='Joint')
