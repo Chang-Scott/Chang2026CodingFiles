@@ -5,10 +5,11 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize
+from scipy.interpolate import make_interp_spline
 from scipy.stats import gaussian_kde, uniform
 import corner
 # Import configuration
-from helpers.mcmc_functions_test import (
+from helpers.mcmc_functions import (
     PARAM_KEYS, BLOB_KEYS, ALL_KEYS,
     PARAM_BOUNDS, DERIVED_PLOTTING_BOUNDS, OBSERVABLE_PLOTTING_BOUNDS, ALL_BOUNDS,
     PARAM_LABELS, DERIVED_LABELS, OBSERVABLE_LABELS, ALL_LABELS,
@@ -331,11 +332,21 @@ def plot_custom_corner(mcmc_data, var_names, plot_vars=None, burn_in=BURN_IN, tr
     print(f"Saved custom_corner_{inversion_type}_{var_str}.png")
 
 
-def plot_posterior_vs_prior(mcmc_data, var_names, var_name, inversion_type, burn_in=BURN_IN, true_values=None, 
-                            figsize=(10, 6)):
+def plot_posterior_vs_prior_histogram(
+    mcmc_data,
+    var_names,
+    var_name,
+    inversion_type,
+    burn_in=BURN_IN,
+    true_values=None,
+    figsize=(10, 6),
+    bins=40,
+    curve_points=400,
+):
     """
-    Plot posterior distribution vs prior distribution for a single variable.
-    
+    Plot posterior distribution vs prior distribution for a single variable
+    using a density-normalized histogram with a smooth curve through bin heights.
+
     Parameters
     ----------
     mcmc_data : ndarray
@@ -352,83 +363,182 @@ def plot_posterior_vs_prior(mcmc_data, var_names, var_name, inversion_type, burn
         Dictionary of true parameter values {var_name: value}
     figsize : tuple
         Figure size
+    bins : int or str or sequence
+        If int, that many equal-width bins from bounds[0] to bounds[1].
+        If str (e.g. 'fd', 'auto'), passed to numpy.histogram_bin_edges.
+        If sequence, explicit bin edges.
+    curve_points : int
+        Number of x samples for the smooth posterior curve.
     """
     # Flatten data after burn-in
     flat_data = mcmc_data[burn_in:].reshape(-1, mcmc_data.shape[-1])
-    
+
     # Extract data for the variable
     if var_name not in var_names:
         raise ValueError(f"Variable '{var_name}' not found in var_names")
-    
+
     idx = var_names.index(var_name)
     data = flat_data[:, idx]
-    
+
     # Remove NaNs
     data = data[~np.isnan(data)]
-    
+
+    if data.size == 0:
+        raise ValueError(f"No valid data available for variable '{var_name}' after removing NaNs.")
+
     # Get bounds
     bounds = ALL_BOUNDS.get(var_name)
     if bounds is None:
         bounds = [data.min(), data.max()]
-    
+
+    # Keep only data inside plotting bounds
+    data = data[(data >= bounds[0]) & (data <= bounds[1])]
+
+    if data.size == 0:
+        raise ValueError(f"No data for '{var_name}' lies within bounds {bounds}.")
+
     # Create figure with white background
     fig, ax = plt.subplots(figsize=figsize, facecolor='white')
     ax.set_facecolor('white')
-    
-    # Create x-axis for plotting
+
+    # Create x-axis for plotting prior
     x = np.linspace(bounds[0], bounds[1], 1000)
-    
+
     # Prior (uniform)
     prior_height = 1.0 / (bounds[1] - bounds[0])
     ax.fill_between(x, 0, prior_height, alpha=0.3, color='gray', label='Prior (Uniform)')
     ax.plot(x, np.full_like(x, prior_height), color='black', linewidth=1.5)
-    # Posterior
-    kde = gaussian_kde(data, bw_method = 0.6)
-    posterior = kde(x)
-    ax.plot(x, posterior, 'b-', linewidth=2, label='Posterior')
-    ax.fill_between(x, 0, posterior, alpha=0.3, color='blue')
-    
+
+    # Histogram bin edges: fixed count on bounds, or numpy rule / explicit edges
+    span = bounds[1] - bounds[0]
+    try:
+        if isinstance(bins, (int, np.integer)):
+            n_bins = int(bins)
+            if n_bins < 1:
+                raise ValueError("bins must be >= 1")
+            bin_edges = np.linspace(bounds[0], bounds[1], n_bins + 1)
+        elif isinstance(bins, str):
+            if np.allclose(data.min(), data.max()):
+                bin_edges = np.linspace(bounds[0], bounds[1], 41)
+            else:
+                bin_edges = np.histogram_bin_edges(data, bins=bins, range=bounds)
+                if len(bin_edges) < 2:
+                    raise ValueError("Histogram bin edge calculation failed.")
+        else:
+            bin_edges = np.asarray(bins, dtype=float)
+            if bin_edges.ndim != 1 or len(bin_edges) < 2:
+                raise ValueError("bins sequence must be 1D with at least 2 edges.")
+    except Exception:
+        bin_edges = np.linspace(bounds[0], bounds[1], 41)
+
+    dens, _ = np.histogram(data, bins=bin_edges, density=True)
+    bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
+
+    # Smooth curve through bin-center densities (clamped non-negative)
+    x_curve = np.linspace(bounds[0], bounds[1], max(50, int(curve_points)))
+    n_centers = len(bin_centers)
+    if n_centers == 0:
+        y_curve = np.zeros_like(x_curve)
+    elif n_centers == 1:
+        y_curve = np.full_like(x_curve, float(dens[0]))
+    else:
+        k = min(3, n_centers - 1)
+        if n_centers > k:
+            spl = make_interp_spline(bin_centers, dens, k=k)
+            y_curve = spl(x_curve)
+        else:
+            y_curve = np.interp(x_curve, bin_centers, dens)
+        y_curve = np.clip(y_curve, 0.0, None)
+
+    # Posterior: light bars + smooth density curve through bin centers
+    ax.hist(
+        data,
+        bins=bin_edges,
+        density=True,
+        histtype='stepfilled',
+        alpha=0.22,
+        color='blue',
+        zorder=2,
+    )
+    ax.hist(
+        data,
+        bins=bin_edges,
+        density=True,
+        histtype='step',
+        linewidth=1.2,
+        color='steelblue',
+        alpha=0.85,
+        zorder=3,
+    )
+    ax.plot(
+        x_curve,
+        y_curve,
+        color='darkblue',
+        linewidth=2.4,
+        label='Posterior',
+        zorder=4,
+    )
+    ax.fill_between(
+        x_curve,
+        0,
+        y_curve,
+        alpha=0.12,
+        color='blue',
+        zorder=1,
+    )
+
     # True value
     if true_values and var_name in true_values:
         true_val = true_values[var_name]
         ax.axvline(true_val, color='red', linestyle='--', linewidth=2, label='True Value')
-    
-    # Compute statistics
-    mean_val = np.mean(data)
-    
 
+    # Mean
+    mean_val = np.mean(data)
     ax.axvline(mean_val, color='darkblue', linestyle='-', linewidth=1.5, alpha=0.7)
-    
-    # Annotations
+
+    # Force ylim update before annotations
+    fig.canvas.draw()
     y_pos = ax.get_ylim()[1]
-    ax.text(mean_val, y_pos * 0.95, f'Mean: {mean_val:.3f}',
-            ha='center', va='top', fontsize=9, color='darkblue',
-            bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
-    
+
+    # Annotations
+    ax.text(
+        mean_val, y_pos * 0.95, f'Mean: {mean_val:.3f}',
+        ha='center', va='top', fontsize=9, color='darkblue',
+        bbox=dict(boxstyle='round', facecolor='white', alpha=0.8)
+    )
+
     if true_values and var_name in true_values:
-        ax.text(true_val, y_pos * 0.75, f'True: {true_val:.3f}',
-                ha='center', va='top', fontsize=9, color='red',
-                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
-    
+        ax.text(
+            true_val, y_pos * 0.75, f'True: {true_val:.3f}',
+            ha='center', va='top', fontsize=9, color='red',
+            bbox=dict(boxstyle='round', facecolor='white', alpha=0.8)
+        )
+
     # Labels and styling
     ax.set_xlabel(ALL_LABELS.get(var_name, var_name), fontsize=12, color='black')
     ax.set_ylabel('Probability Density', fontsize=12, color='black')
-    ax.set_title(f'Posterior vs Prior: {ALL_LABELS.get(var_name, var_name)}', 
-                fontsize=14, color='black', weight='bold')
+    ax.set_title(
+        f'Posterior vs Prior: {ALL_LABELS.get(var_name, var_name)}',
+        fontsize=14, color='black', weight='bold'
+    )
     ax.set_xlim(bounds)
     ax.legend(loc='upper right', fontsize=10, framealpha=0.9)
     ax.grid(alpha=0.3, color='gray')
     ax.tick_params(colors='black')
-    
+
     for spine in ax.spines.values():
         spine.set_edgecolor('black')
-    
+
     # Save
     os.makedirs('mcmc_figures', exist_ok=True)
-    plt.savefig(f'mcmc_figures/posterior_vs_prior_{inversion_type}_{var_name}.png', dpi=300, bbox_inches='tight', facecolor='white')
+    plt.savefig(
+        f'mcmc_figures/posterior_vs_prior_{inversion_type}_{var_name}.png',
+        dpi=300,
+        bbox_inches='tight',
+        facecolor='white'
+    )
     plt.close()
     print(f"Saved posterior_vs_prior_{inversion_type}_{var_name}.png")
-
 
 def plot_mcmc_results(samples, log_prob, inversion_type, burn_in=BURN_IN):
     """

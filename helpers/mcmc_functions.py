@@ -46,7 +46,7 @@ PARAM_BOUNDS = {
     'rho_core': [5150, 8000],
     'log_r_core_m': [3, 6],
     'log_fH2': [-12.0, -3.0],
-    'Tb_K': [250, 273],
+    'PbISet_MPa': [0, 200],
     'PHydroSeafloorSet_MPa': [0, 400]
 }
 
@@ -81,7 +81,7 @@ PARAM_LABELS = {
     'rho_core': r'$\rho_{\mathrm{core}}$ (kg/m³)',
     'rho_sil': r'$\rho_{\mathrm{sil}}$ (kg/m³)',
     'log_fH2': r'log $f_{\mathrm{H}_2}$',
-    'Tb_K': r'$T_b$ (K)',
+    'PbISet_MPa': r'$P_{bI}$ (MPa)',
 }
 
 DERIVED_LABELS = {
@@ -137,7 +137,7 @@ def run_planetprofile(theta, planet_template, global_params, inversion_type):
     Parameters
     ----------
     theta : array-like
-        Parameter values [rho_core, rho_sil, log_fH2, Tb_K]
+        Parameter values [rho_core, rho_sil, log_fH2, PbISet_MPa, PHydroSeafloorSet_MPa]
     planet_template : Planet object
         Template planet to copy
     global_params : Params object
@@ -158,7 +158,7 @@ def run_planetprofile(theta, planet_template, global_params, inversion_type):
     planetRun = copy.deepcopy(planet_template)
     
     # Unpack parameters
-    rho_core, log_r_core_m, log_fH2, Tb_K, PHydroSeafloorSet_MPa = theta
+    rho_core, log_r_core_m, log_fH2, PbISet_MPa, PHydroSeafloorSet_MPa = theta
     r_core_m = 10**log_r_core_m
     
     # Set core density and radius
@@ -169,7 +169,8 @@ def run_planetprofile(theta, planet_template, global_params, inversion_type):
     
     # Set parameters
     planetRun.Do.ICEIh_THICKNESS = False
-    planetRun.Bulk.Tb_K = Tb_K
+    planetRun.Do.SPECIFY_ICEI_BOTTOM_PRESSURE = True
+    planetRun.Bulk.PbISet_MPa = PbISet_MPa
     planetRun.Do.SPECIFY_HYDROSPHERE_SEAFLOOR_PRESSURE = True
     planetRun.Ocean.PHydroSeafloorSet_MPa = PHydroSeafloorSet_MPa
     

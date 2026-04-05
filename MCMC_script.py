@@ -22,7 +22,7 @@ from helpers.mcmc_functions import *
 
 from helpers.pp_common import loadUserSettings, CopyCarefully
 from plotting.mcmc_plots import (
-    plot_mcmc_results, plot_2d_corner, plot_custom_corner, plot_posterior_vs_prior,
+    plot_mcmc_results, plot_2d_corner, plot_custom_corner, plot_posterior_vs_prior_histogram,
     plot_variable_histograms
 )
 
@@ -272,10 +272,11 @@ def inversion(inversion_type):
         true_values=true_params,
         inversion_type=inversion_type,
     )
+    """
     plot_custom_corner(
         mcmc_data,
         var_names=var_names,
-        plot_vars=['ice_thickness_km', 'ocean_thickness_km', 'rho_sil', 'rho_core', 'core_radius_km'],
+        plot_vars=['ice_thickness_km', 'ocean_thickness_km', 'log_fH2'],
         true_values=true_params,
         inversion_type=inversion_type,
     )
@@ -289,15 +290,7 @@ def inversion(inversion_type):
     )
     # Posterior vs prior plots
     print("\nGenerating posterior vs prior plots...")
-    plot_posterior_vs_prior(
-        mcmc_data,
-        var_names=var_names,
-        var_name='log_fH2',
-        true_values=true_params,
-        inversion_type=inversion_type,
-            )
-    """
-    plot_posterior_vs_prior(
+    plot_posterior_vs_prior_histogram(
         mcmc_data,
         var_names=var_names,
         var_name='log_fH2',
@@ -311,7 +304,7 @@ def inversion(inversion_type):
 
 
 if __name__ == "__main__":
-    inversion(inversion_type='Gravity')
-    inversion(inversion_type='GravityandTides')
+    #inversion(inversion_type='Gravity')
+    #inversion(inversion_type='GravityandTides')
     inversion(inversion_type='MagneticInduction')
     inversion(inversion_type='Joint')
